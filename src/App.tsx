@@ -6,6 +6,9 @@ import 'react-toastify/dist/ReactToastify.css';
 import Login from './pages/auth/Login';
 import ForgotPassword from './pages/auth/ForgotPassword';
 import Register from './pages/auth/Register';
+import ConfirmEmail from './pages/auth/ConfirmEmail';
+import ResetPassword from './pages/auth/ResetPassword';
+import AuthCallback from './pages/auth/AuthCallback'; // <-- importação do callback
 
 // Dashboard Pages
 import Dashboard from './pages/dashboard/Dashboard';
@@ -14,7 +17,6 @@ import Configuracoes from './pages/dashboard/Configuracoes';
 import Players from './pages/dashboard/Players';
 import GerenciarVideos from './pages/dashboard/Gerenciarvideos';
 import Playlists from './pages/dashboard/Playlists';
-
 
 // Layouts
 import AuthLayout from './layouts/AuthLayout';
@@ -35,14 +37,20 @@ function App() {
             <Route path="login" element={<Login />} />
             <Route path="forgot-password" element={<ForgotPassword />} />
             <Route path="register" element={<Register />} />
+            <Route path="confirm" element={<ConfirmEmail />} />
+            <Route path="reset-password" element={<ResetPassword />} />
+            <Route path="auth/callback" element={<AuthCallback />} /> {/* <-- Rota callback */}
           </Route>
 
           {/* Dashboard Routes */}
-          <Route path="/dashboard" element={
-            <PrivateRoute>
-              <DashboardLayout />
-            </PrivateRoute>
-          }>
+          <Route
+            path="/dashboard"
+            element={
+              <PrivateRoute>
+                <DashboardLayout />
+              </PrivateRoute>
+            }
+          >
             <Route index element={<Dashboard />} />
             <Route path="dados-conexao" element={<DadosConexao />} />
             <Route path="configuracoes" element={<Configuracoes />} />

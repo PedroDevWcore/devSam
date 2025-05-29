@@ -1,24 +1,28 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-// import api from '../services/api'; // 🔴 Comentado pois não será usado aqui
+import { supabase } from '../lib/supabase';
+import { z } from 'zod';
 
-interface User {
-  nome: string;
-  email: string;
-  streamings: number;
-  espectadores: number;
-  bitrate: number;
-  espaco: number;
-}
+const userSchema = z.object({
+  id: z.string(),
+  email: z.string().email(),
+  nome: z.string(),
+  streamings: z.number(),
+  espectadores: z.number(),
+  bitrate: z.number(),
+  espaco: z.number(),
+});
+
+type User = z.infer<typeof userSchema>;
 
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   forgotPassword: (email: string) => Promise<void>;
-  register: (name: string, email: string, cpf: string, phone: string) => Promise<void>;
+  register: (name: string, email: string, password: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -37,63 +41,144 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const navigate = useNavigate();
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    const storedUser = localStorage.getItem('user');
+    // Check active sessions and sets the user
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUserData(session.user);
+      }
+    });
 
-    if (token && storedUser) {
-      setUser(JSON.parse(storedUser));
-      setIsAuthenticated(true);
-    }
+    // Listen for changes on auth state (sign in, sign out, etc.)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setUserData(session.user);
+      } else {
+        setUser(null);
+        setIsAuthenticated(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  // ✅ Login simulado (aceita qualquer senha)
-  const login = async (email: string, password: string) => {
+  const setUserData = async (authUser: any) => {
     try {
-      console.log(`Simulando login com ${email} / ${password}`);
+      // Fetch additional user data from your profiles table
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', authUser.id)
+        .single();
 
-      await new Promise((res) => setTimeout(res, 500)); // atraso simulado
+      if (error) throw error;
 
-      const userData: User = {
-        nome: 'Usuário Demo',
-        email,
-        streamings: 3,
-        espectadores: 100,
-        bitrate: 5000,
-        espaco: 10,
+      const userData = {
+        id: authUser.id,
+        email: authUser.email!,
+        nome: data.nome,
+        streamings: data.streamings || 0,
+        espectadores: data.espectadores || 0,
+        bitrate: data.bitrate || 0,
+        espaco: data.espaco || 0,
       };
 
-      const fakeToken = 'fake-token-123';
-
-      localStorage.setItem('token', fakeToken);
-      localStorage.setItem('user', JSON.stringify(userData));
-
-      setUser(userData);
+      const validatedUser = userSchema.parse(userData);
+      setUser(validatedUser);
       setIsAuthenticated(true);
-      navigate('/dashboard');
-      toast.success('Login simulado com sucesso!');
     } catch (error) {
-      toast.error('Erro simulado no login');
-      console.error('Erro simulado:', error);
+      console.error('Error setting user data:', error);
+      toast.error('Erro ao carregar dados do usuário');
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    setUser(null);
-    setIsAuthenticated(false);
-    navigate('/login');
-    toast.info('Logout realizado com sucesso');
+  const login = async (email: string, password: string) => {
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) throw error;
+
+      if (data.user) {
+        navigate('/dashboard');
+        toast.success('Login realizado com sucesso!');
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Erro ao fazer login');
+      throw error;
+    }
+  };
+
+  const logout = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+
+      setUser(null);
+      setIsAuthenticated(false);
+      navigate('/login');
+      toast.info('Logout realizado com sucesso');
+    } catch (error: any) {
+      toast.error(error.message || 'Erro ao fazer logout');
+    }
+  };
+
+  const register = async (name: string, email: string, password: string) => {
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            nome: name,
+          },
+        },
+      });
+
+      if (error) throw error;
+
+      if (data.user) {
+        // Create profile record
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert([
+            {
+              id: data.user.id,
+              nome: name,
+              email: email,
+              streamings: 0,
+              espectadores: 0,
+              bitrate: 0,
+              espaco: 0,
+            },
+          ]);
+
+        if (profileError) throw profileError;
+
+        toast.success('Cadastro realizado com sucesso! Verifique seu email.');
+        navigate('/login');
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Erro ao criar conta');
+      throw error;
+    }
   };
 
   const forgotPassword = async (email: string) => {
-    toast.info('Recuperação de senha simulada para: ' + email);
-    setTimeout(() => navigate('/login'), 2000);
-  };
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
 
-  const register = async (name: string, email: string, cpf: string, phone: string) => {
-    toast.success('Cadastro simulado com sucesso! Aguarde aprovação.');
-    setTimeout(() => navigate('/login'), 2000);
+      if (error) throw error;
+
+      toast.success('Email de recuperação enviado!');
+      navigate('/login');
+    } catch (error: any) {
+      toast.error(error.message || 'Erro ao enviar email de recuperação');
+      throw error;
+    }
   };
 
   return (

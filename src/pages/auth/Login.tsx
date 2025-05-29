@@ -1,21 +1,58 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { z } from 'zod';
+
+const loginSchema = z.object({
+  email: z.string().email('Email inválido'),
+  password: z.string().min(1, 'Senha é obrigatória'),
+});
 
 const Login: React.FC = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [formData, setFormData] = useState({
+    email: '',
+    password: '',
+  });
+  const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData(prev => ({
+      ...prev,
+      [e.target.name]: e.target.value
+    }));
+    // Clear error when user starts typing
+    if (errors[e.target.name]) {
+      setErrors(prev => ({
+        ...prev,
+        [e.target.name]: ''
+      }));
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setErrors({});
     
     try {
-      await login(email, password);
+      // Validate form data
+      loginSchema.parse(formData);
+      
+      await login(formData.email, formData.password);
     } catch (error) {
-      console.error('Login error:', error);
+      if (error instanceof z.ZodError) {
+        const newErrors: { [key: string]: string } = {};
+        error.errors.forEach(err => {
+          if (err.path[0]) {
+            newErrors[err.path[0].toString()] = err.message;
+          }
+        });
+        setErrors(newErrors);
+      } else {
+        console.error('Login error:', error);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -35,13 +72,17 @@ const Login: React.FC = () => {
           </label>
           <input
             id="email"
+            name="email"
             type="email"
             required
-            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+            className={`w-full px-4 py-2 border rounded-md focus:ring-primary-500 focus:border-primary-500 ${
+              errors.email ? 'border-red-500' : 'border-gray-300'
+            }`}
             placeholder="seu@email.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            value={formData.email}
+            onChange={handleChange}
           />
+          {errors.email && <p className="mt-1 text-sm text-red-600">{errors.email}</p>}
         </div>
 
         <div>
@@ -55,19 +96,23 @@ const Login: React.FC = () => {
           </div>
           <input
             id="password"
+            name="password"
             type="password"
             required
-            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+            className={`w-full px-4 py-2 border rounded-md focus:ring-primary-500 focus:border-primary-500 ${
+              errors.password ? 'border-red-500' : 'border-gray-300'
+            }`}
             placeholder="••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            value={formData.password}
+            onChange={handleChange}
           />
+          {errors.password && <p className="mt-1 text-sm text-red-600">{errors.password}</p>}
         </div>
 
         <div>
           <button
             type="submit"
-            className="w-full px-4 py-2 text-white bg-primary-600 rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 flex items-center justify-center"
+            className="w-full px-4 py-2 text-white bg-primary-600 rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={isLoading}
           >
             {isLoading ? (

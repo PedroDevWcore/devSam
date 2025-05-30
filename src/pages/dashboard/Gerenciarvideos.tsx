@@ -9,7 +9,14 @@ type Video = {
   id: number;
   nome: string;
   playlist_id: number;
+  duracao?: number; // duração em segundos
 };
+
+function formatarDuracao(segundos: number): string {
+  const m = Math.floor(segundos / 60);
+  const s = Math.floor(segundos % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
 
 export default function GerenciarVideos() {
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
@@ -50,14 +57,17 @@ export default function GerenciarVideos() {
   const fetchVideos = (playlist_id: number) => {
     fetch(`http://localhost:3001/api/videos?playlist_id=${playlist_id}`)
       .then((res) => res.json())
-      .then(setVideos)
+      .then((videosAPI: Video[]) => {
+        // Aqui vídeos do backend não têm duração, podemos deixar vazio ou buscar depois
+        setVideos(videosAPI);
+      })
       .catch(console.error);
   };
 
   const handleFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-    const videosOnly = Array.from(files).filter(f => f.type.startsWith("video/"));
+    const videosOnly = Array.from(files).filter((f) => f.type.startsWith("video/"));
     if (videosOnly.length !== files.length) {
       alert("Apenas arquivos de vídeo são permitidos.");
       e.target.value = "";
@@ -67,24 +77,68 @@ export default function GerenciarVideos() {
     setUploadFiles(files);
   };
 
+  // Função para extrair duração de um arquivo File
+  const getVideoDuration = (file: File): Promise<number> => {
+    return new Promise((resolve) => {
+      const url = URL.createObjectURL(file);
+      const video = document.createElement("video");
+      video.preload = "metadata";
+      video.src = url;
+      video.onloadedmetadata = () => {
+        URL.revokeObjectURL(url);
+        resolve(video.duration);
+      };
+      video.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(0);
+      };
+    });
+  };
+
   const uploadVideos = async () => {
     if (!playlistSelecionada || !uploadFiles || uploadFiles.length === 0) {
       alert("Selecione uma playlist e ao menos um arquivo para upload.");
       return;
     }
     setUploading(true);
-    const formData = new FormData();
-    for (let i = 0; i < uploadFiles.length; i++) {
-      formData.append("videos", uploadFiles[i]);
-    }
-    formData.append("playlist_id", playlistSelecionada.id.toString());
+
     try {
+      // Extrair duração dos vídeos antes do upload
+      const videosComDuracao = await Promise.all(
+        Array.from(uploadFiles).map(async (file) => {
+          const duracao = await getVideoDuration(file);
+          return {
+            nome: file.name,
+            duracao,
+          };
+        })
+      );
+
+      // Enviar para backend
+      const formData = new FormData();
+      for (let i = 0; i < uploadFiles.length; i++) {
+        formData.append("videos", uploadFiles[i]);
+      }
+      formData.append("playlist_id", playlistSelecionada.id.toString());
+
       const res = await fetch("http://localhost:3001/api/videos/upload", {
         method: "POST",
         body: formData,
       });
       if (!res.ok) throw new Error("Erro ao enviar vídeos");
-      fetchVideos(playlistSelecionada.id);
+
+      // Atualizar lista com os vídeos já existentes + os novos, simulando IDs únicos
+      // Normalmente você deve receber IDs do backend, aqui só simulamos temporariamente
+      setVideos((oldVideos) => [
+        ...oldVideos,
+        ...videosComDuracao.map((v, idx) => ({
+          id: Date.now() + idx,
+          nome: v.nome,
+          playlist_id: playlistSelecionada.id,
+          duracao: v.duracao,
+        })),
+      ]);
+
       setUploadFiles(null);
       const inputFile = document.getElementById("input-upload-videos") as HTMLInputElement | null;
       if (inputFile) inputFile.value = "";
@@ -175,7 +229,7 @@ export default function GerenciarVideos() {
                   value={editPlaylistNome}
                   onChange={(e) => setEditPlaylistNome(e.target.value)}
                   autoFocus
-                  onKeyDown={e => e.key === 'Enter' && salvarEdicaoPlaylist()}
+                  onKeyDown={(e) => e.key === "Enter" && salvarEdicaoPlaylist()}
                 />
                 <button
                   className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 transition"
@@ -234,11 +288,11 @@ export default function GerenciarVideos() {
         <div className="mt-4 flex gap-2">
           <input
             type="text"
-            placeholder="Nova playlist"
+            className="flex-grow border border-gray-300 rounded px-3 py-2 focus:outline-blue-500"
+            placeholder="Nova playlist..."
             value={novoPlaylistNome}
             onChange={(e) => setNovoPlaylistNome(e.target.value)}
-            className="flex-grow border border-gray-300 rounded px-3 py-2 focus:outline-blue-500"
-            onKeyDown={e => e.key === 'Enter' && criarPlaylist()}
+            onKeyDown={(e) => e.key === "Enter" && criarPlaylist()}
           />
           <button
             className="bg-blue-600 text-white px-4 rounded hover:bg-blue-700 transition"
@@ -249,31 +303,38 @@ export default function GerenciarVideos() {
         </div>
       </section>
 
-      <section className="md:w-2/3 flex flex-col bg-white p-5 rounded-lg shadow-md">
+      <section className="md:w-2/3 bg-white p-5 rounded-lg shadow-md flex flex-col">
         <h2 className="text-2xl font-semibold mb-5 text-gray-800">
-          Vídeos {playlistSelecionada ? `- ${playlistSelecionada.nome}` : ""}
+          Vídeos da playlist:{" "}
+          <span className="font-normal text-gray-600">
+            {playlistSelecionada?.nome ?? "-"}
+          </span>
         </h2>
 
-        <div className="mb-4">
+        <div className="mb-4 flex items-center gap-4">
           <input
             id="input-upload-videos"
             type="file"
-            multiple
             accept="video/*"
+            multiple
             onChange={handleFilesChange}
             disabled={!playlistSelecionada || uploading}
-            className="border border-gray-300 rounded px-3 py-2 w-full"
+            className="border border-gray-300 rounded px-3 py-2 cursor-pointer"
           />
           <button
             onClick={uploadVideos}
-            disabled={uploading || !uploadFiles || uploadFiles.length === 0 || !playlistSelecionada}
-            className={`mt-2 w-full bg-green-600 text-white py-2 rounded hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed`}
+            disabled={!uploadFiles || uploadFiles.length === 0 || uploading}
+            className={`px-5 py-2 rounded text-white ${
+              !uploadFiles || uploadFiles.length === 0 || uploading
+                ? "bg-gray-400 cursor-not-allowed"
+                : "bg-green-600 hover:bg-green-700"
+            } transition`}
           >
             {uploading ? "Enviando..." : "Enviar vídeos"}
           </button>
         </div>
 
-        <ul className="flex-grow overflow-auto max-h-[400px] space-y-2">
+        <ul className="flex-grow overflow-auto max-h-[400px] space-y-3 border border-gray-200 rounded p-3">
           {videos.map((video) =>
             editVideoId === video.id ? (
               <li key={video.id} className="flex gap-2 items-center">
@@ -282,7 +343,7 @@ export default function GerenciarVideos() {
                   value={editVideoNome}
                   onChange={(e) => setEditVideoNome(e.target.value)}
                   autoFocus
-                  onKeyDown={e => e.key === 'Enter' && salvarEdicaoVideo()}
+                  onKeyDown={(e) => e.key === "Enter" && salvarEdicaoVideo()}
                 />
                 <button
                   className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 transition"
@@ -302,9 +363,14 @@ export default function GerenciarVideos() {
             ) : (
               <li
                 key={video.id}
-                className="flex justify-between items-center p-3 rounded border border-gray-200 hover:bg-gray-50 cursor-default select-none"
+                className="flex justify-between items-center p-3 rounded bg-gray-50 hover:bg-gray-100 select-none"
               >
-                <span>{video.nome}</span>
+                <span>
+                  {video.nome}{" "}
+                  {video.duracao !== undefined && (
+                    <small className="text-gray-500 ml-2">[{formatarDuracao(video.duracao)}]</small>
+                  )}
+                </span>
                 <span className="flex gap-2">
                   <button
                     className="text-blue-600 hover:text-blue-800"
@@ -325,7 +391,7 @@ export default function GerenciarVideos() {
             )
           )}
           {videos.length === 0 && (
-            <li className="text-center text-gray-400 italic">Nenhum vídeo na playlist.</li>
+            <li className="text-center text-gray-500">Nenhum vídeo nesta playlist.</li>
           )}
         </ul>
       </section>

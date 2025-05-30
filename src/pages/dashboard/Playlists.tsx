@@ -1,14 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { ChevronLeft, PlusCircle, X, Edit2, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import api from '../../services/api';
+import { supabase } from '../../lib/supabase'; // use seu caminho real
+import type { Database } from '../../lib/types/supabaseTypes'; // ajuste o caminho
 
-interface Playlist {
-  id: number;
-  nome: string;
-  quantidadeVideos: number;
-  duracaoTotal: number; // em segundos
-}
+type Playlist = Database['public']['Tables']['playlists']['Row'];
 
 const Playlists: React.FC = () => {
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
@@ -20,11 +16,14 @@ const Playlists: React.FC = () => {
 
   const carregarPlaylists = async () => {
     setStatus(null);
-    try {
-      const { data } = await api.get<Playlist[]>('/playlists');
-      setPlaylists(data);
-    } catch {
+    const { data, error } = await supabase
+      .from('playlists')
+      .select('*');
+
+    if (error) {
       setStatus('Erro ao carregar playlists');
+    } else {
+      setPlaylists(data || []);
     }
   };
 
@@ -39,25 +38,37 @@ const Playlists: React.FC = () => {
 
     try {
       if (editingId !== null) {
-        await api.put(`/playlists/${editingId}`, { nome: nomePlaylist });
+        const { error } = await supabase
+          .from('playlists')
+          .update({ nome: nomePlaylist })
+          .eq('id', editingId);
+
+        if (error) throw error;
+
         setStatus('Playlist atualizada com sucesso!');
       } else {
-        await api.post('/playlists', { nome: nomePlaylist });
+        const { error } = await supabase
+          .from('playlists')
+          .insert({ nome: nomePlaylist });
+
+        if (error) throw error;
+
         setStatus('Playlist criada com sucesso!');
       }
+
       setShowModal(false);
       setNomePlaylist('');
       setEditingId(null);
       await carregarPlaylists();
     } catch (error: any) {
-      setStatus(error.response?.data?.error || 'Erro ao salvar playlist');
+      setStatus(error.message || 'Erro ao salvar playlist');
     } finally {
       setLoading(false);
     }
   };
 
   const abrirEditar = (playlist: Playlist) => {
-    setNomePlaylist(playlist.nome);
+    setNomePlaylist(playlist.nome ?? "");
     setEditingId(playlist.id);
     setShowModal(true);
     setStatus(null);
@@ -66,12 +77,17 @@ const Playlists: React.FC = () => {
   const deletarPlaylist = async (id: number) => {
     if (!window.confirm('Confirma a exclusão desta playlist?')) return;
     setStatus(null);
-    try {
-      await api.delete(`/playlists/${id}`);
+
+    const { error } = await supabase
+      .from('playlists')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      setStatus('Erro ao deletar playlist');
+    } else {
       setStatus('Playlist deletada com sucesso!');
       await carregarPlaylists();
-    } catch {
-      setStatus('Erro ao deletar playlist');
     }
   };
 
@@ -129,10 +145,10 @@ const Playlists: React.FC = () => {
               <tr key={playlist.id} className="border-b hover:bg-gray-50">
                 <td className="px-4 py-2">{index + 1}</td>
                 <td className="px-4 py-2">
-                  {playlist.nome} ({playlist.quantidadeVideos} vídeo{playlist.quantidadeVideos !== 1 ? 's' : ''}, {formatarDuracao(playlist.duracaoTotal)})
+                  {playlist.nome}
                 </td>
-                <td className="px-4 py-2">{playlist.quantidadeVideos}</td>
-                <td className="px-4 py-2">{formatarDuracao(playlist.duracaoTotal)}</td>
+                <td className="px-4 py-2">{playlist.quantidadeVideos || 0}</td>
+                <td className="px-4 py-2">{formatarDuracao(playlist.duracaoTotal || 0)}</td>
                 <td className="px-4 py-2 text-right space-x-2">
                   <button
                     onClick={() => abrirEditar(playlist)}

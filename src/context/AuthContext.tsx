@@ -23,6 +23,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
   forgotPassword: (email: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
+  getToken: () => Promise<string | null>;  // <-- Adicionado
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -41,14 +42,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Check active sessions and sets the user
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         setUserData(session.user);
       }
     });
 
-    // Listen for changes on auth state (sign in, sign out, etc.)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
         setUserData(session.user);
@@ -63,7 +62,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const setUserData = async (authUser: any) => {
     try {
-      // Fetch additional user data from your profiles table
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -89,6 +87,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error('Error setting user data:', error);
       toast.error('Erro ao carregar dados do usuário');
     }
+  };
+
+  const getToken = async () => {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? null;
   };
 
   const login = async (email: string, password: string) => {
@@ -139,7 +142,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (error) throw error;
 
       if (data.user) {
-        // Create profile record
         const { error: profileError } = await supabase
           .from('profiles')
           .insert([
@@ -182,7 +184,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, login, logout, forgotPassword, register }}>
+    <AuthContext.Provider value={{ user, isAuthenticated, login, logout, forgotPassword, register, getToken }}>
       {children}
     </AuthContext.Provider>
   );

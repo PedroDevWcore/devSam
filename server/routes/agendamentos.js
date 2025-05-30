@@ -56,4 +56,6 @@ router.get('/', supabaseAuthMiddleware, async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: err.message || 'Erro interno no servidor' });
     }
+
 });
+export default router;

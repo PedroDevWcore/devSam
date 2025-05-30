@@ -3,9 +3,17 @@ import { supabase, supabaseAuthMiddleware } from '../supabaseClient.js';
 
 const router = express.Router();
 
-router.get('/', async (req, res) => {
+// GET playlists — agora apenas do usuário autenticado
+router.get('/', supabaseAuthMiddleware, async (req, res) => {
   try {
-    const { data, error } = await supabase.from('playlists').select('id, nome').order('id');
+    const id_user = req.user.id;
+
+    const { data, error } = await supabase
+      .from('playlists')
+      .select('id, nome')
+      .eq('id_user', id_user)
+      .order('id');
+
     if (error) throw error;
     res.json(data);
   } catch (err) {

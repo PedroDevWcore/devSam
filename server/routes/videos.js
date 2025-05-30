@@ -6,11 +6,8 @@ import multer from 'multer';
 import { promisify } from 'util';
 
 const router = express.Router();
-
-// --- Promisify ffprobe para usar async/await ---
 const ffprobePromise = promisify(ffmpeg.ffprobe);
 
-// --- Configuração do Multer para Upload de Arquivos ---
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadPath = 'videos/';
@@ -24,15 +21,28 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ storage: storage });
+const upload = multer({ storage });
 
-// --- Rotas da API de Vídeos ---
-
-router.get('/', async (req, res) => {
+// --- GET vídeos filtrando por playlist e usuário ---
+router.get('/', supabaseAuthMiddleware, async (req, res) => {
   try {
     const playlistId = parseInt(req.query.playlist_id, 10);
     if (isNaN(playlistId)) {
       return res.status(400).json({ error: 'Parâmetro playlist_id inválido' });
+    }
+
+    const id_user = req.user.id;
+
+    // Verifica se a playlist pertence ao usuário
+    const { data: playlist, error: playlistError } = await supabase
+      .from('playlists')
+      .select('id')
+      .eq('id', playlistId)
+      .eq('id_user', id_user)
+      .single();
+
+    if (playlistError || !playlist) {
+      return res.status(403).json({ error: 'Acesso negado: playlist não encontrada ou não pertence ao usuário' });
     }
 
     const { data, error } = await supabase
@@ -42,9 +52,9 @@ router.get('/', async (req, res) => {
       .order('id', { ascending: true });
 
     if (error) {
-      console.error('Erro Supabase GET videos:', error);
       throw error;
     }
+
     res.json(data);
   } catch (err) {
     console.error('Erro ao buscar vídeos:', err);
@@ -52,6 +62,7 @@ router.get('/', async (req, res) => {
   }
 });
 
+// --- POST vídeo manual ---
 router.post('/', supabaseAuthMiddleware, async (req, res) => {
   try {
     const { nome, filename, id_playlist, duracao } = req.body;
@@ -64,10 +75,8 @@ router.post('/', supabaseAuthMiddleware, async (req, res) => {
       .insert([{ nome, filename, id_playlist, duracao }])
       .select();
 
-    if (error) {
-      console.error('Erro Supabase POST videos:', error);
-      throw error;
-    }
+    if (error) throw error;
+
     res.status(201).json(data[0]);
   } catch (err) {
     console.error('Erro ao criar vídeo:', err);
@@ -75,6 +84,7 @@ router.post('/', supabaseAuthMiddleware, async (req, res) => {
   }
 });
 
+// --- PUT vídeo ---
 router.put('/:id', supabaseAuthMiddleware, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
@@ -89,10 +99,7 @@ router.put('/:id', supabaseAuthMiddleware, async (req, res) => {
       .eq('id', id)
       .select();
 
-    if (error) {
-      console.error('Erro Supabase PUT videos:', error);
-      throw error;
-    }
+    if (error) throw error;
     if (data.length === 0) {
       return res.status(404).json({ error: 'Vídeo não encontrado' });
     }
@@ -104,6 +111,7 @@ router.put('/:id', supabaseAuthMiddleware, async (req, res) => {
   }
 });
 
+// --- DELETE vídeo ---
 router.delete('/:id', supabaseAuthMiddleware, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
@@ -118,20 +126,16 @@ router.delete('/:id', supabaseAuthMiddleware, async (req, res) => {
       .single();
 
     if (fetchError || !videoData) {
-      console.warn(`Não foi possível encontrar o filename para o vídeo ID ${id}. O arquivo local pode não ser deletado.`);
+      console.warn(`Vídeo não encontrado ou erro ao buscar filename.`);
     } else {
       const filePathToDelete = `videos/${videoData.filename}`;
       if (fs.existsSync(filePathToDelete)) {
         fs.unlinkSync(filePathToDelete);
-        console.log(`Arquivo local ${filePathToDelete} deletado.`);
       }
     }
 
     const { error: deleteError } = await supabase.from('videos').delete().eq('id', id);
-    if (deleteError) {
-      console.error('Erro Supabase DELETE videos:', deleteError);
-      throw deleteError;
-    }
+    if (deleteError) throw deleteError;
 
     res.status(204).send();
   } catch (err) {
@@ -140,6 +144,7 @@ router.delete('/:id', supabaseAuthMiddleware, async (req, res) => {
   }
 });
 
+// --- UPLOAD de vídeo ---
 router.post('/upload', supabaseAuthMiddleware, upload.single('video'), async (req, res) => {
   try {
     if (!req.file) {
@@ -148,26 +153,43 @@ router.post('/upload', supabaseAuthMiddleware, upload.single('video'), async (re
 
     const { playlist_id } = req.body;
     const parsedPlaylistId = parseInt(playlist_id, 10);
+    const id_user = req.user.id;
 
     if (isNaN(parsedPlaylistId)) {
       fs.unlinkSync(req.file.path);
-      return res.status(400).json({ error: 'Parâmetro id_playlist inválido' });
+      return res.status(400).json({ error: 'Parâmetro playlist_id inválido' });
     }
 
-    // Obter metadados do vídeo via ffprobe promisificado
-    const metadata = await ffprobePromise(req.file.path);
+    // Verifica se a playlist pertence ao usuário
+    const { data: playlist, error: playlistError } = await supabase
+      .from('playlists')
+      .select('id')
+      .eq('id', parsedPlaylistId)
+      .eq('id_user', id_user)
+      .single();
 
+    if (playlistError || !playlist) {
+      fs.unlinkSync(req.file.path);
+      return res.status(403).json({ error: 'Acesso negado: playlist não encontrada ou não pertence ao usuário' });
+    }
+
+    const metadata = await ffprobePromise(req.file.path);
     const duration = metadata.format.duration;
     const size = req.file.size;
 
     const { data, error } = await supabase
       .from('videos')
-      .insert([{ nome: req.file.originalname, filename: req.file.filename, id_playlist: parsedPlaylistId, duracao: duration, tamanho: size }])
+      .insert([{
+        nome: req.file.originalname,
+        filename: req.file.filename,
+        id_playlist: parsedPlaylistId,
+        duracao: duration,
+        tamanho: size
+      }])
       .select();
 
     if (error) {
       fs.unlinkSync(req.file.path);
-      console.error('Erro Supabase INSERT videos:', error);
       throw error;
     }
 

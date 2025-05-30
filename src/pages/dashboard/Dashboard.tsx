@@ -182,12 +182,16 @@ const Dashboard: React.FC = () => {
               <span className="text-sm text-gray-700 text-center">Gerenciar Playlists</span>
             </Link>
 
-            <div className="flex flex-col items-center justify-center p-3 hover:bg-gray-50 rounded-lg transition-colors">
+            <Link
+              to="/dashboard/agendamentos"
+              className="flex flex-col items-center justify-center p-3 hover:bg-gray-50 rounded-lg transition-colors"
+            >
               <div className="w-12 h-12 flex items-center justify-center bg-primary-100 text-primary-600 rounded-full mb-2">
                 <Calendar className="h-6 w-6" />
               </div>
               <span className="text-sm text-gray-700 text-center">Agendar Playlists</span>
-            </div>
+            </Link>
+
 
             <div className="flex flex-col items-center justify-center p-3 hover:bg-gray-50 rounded-lg transition-colors">
               <div className="w-12 h-12 flex items-center justify-center bg-primary-100 text-primary-600 rounded-full mb-2">

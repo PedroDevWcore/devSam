@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { z } from 'zod';
 
@@ -9,25 +9,16 @@ const loginSchema = z.object({
 });
 
 const Login: React.FC = () => {
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-  });
+  const [formData, setFormData] = useState({ email: '', password: '' });
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
+  const navigate = useNavigate();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData(prev => ({
-      ...prev,
-      [e.target.name]: e.target.value
-    }));
-    // Clear error when user starts typing
+    setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
     if (errors[e.target.name]) {
-      setErrors(prev => ({
-        ...prev,
-        [e.target.name]: ''
-      }));
+      setErrors(prev => ({ ...prev, [e.target.name]: '' }));
     }
   };
 
@@ -35,23 +26,20 @@ const Login: React.FC = () => {
     e.preventDefault();
     setIsLoading(true);
     setErrors({});
-    
+
     try {
-      // Validate form data
       loginSchema.parse(formData);
-      
       await login(formData.email, formData.password);
+      navigate('/dashboard'); // redireciona após login
     } catch (error) {
       if (error instanceof z.ZodError) {
         const newErrors: { [key: string]: string } = {};
         error.errors.forEach(err => {
-          if (err.path[0]) {
-            newErrors[err.path[0].toString()] = err.message;
-          }
+          if (err.path[0]) newErrors[err.path[0].toString()] = err.message;
         });
         setErrors(newErrors);
-      } else {
-        console.error('Login error:', error);
+      } else if (error instanceof Error) {
+        setErrors({ password: error.message }); // pode ajustar para mostrar onde quiser
       }
     } finally {
       setIsLoading(false);
@@ -117,9 +105,25 @@ const Login: React.FC = () => {
           >
             {isLoading ? (
               <>
-                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white\" xmlns="http://www.w3.org/2000/svg\" fill="none\" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                <svg
+                  className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  ></circle>
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
                 </svg>
                 Processando...
               </>

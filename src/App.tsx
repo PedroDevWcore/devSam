@@ -15,7 +15,7 @@ import Dashboard from './pages/dashboard/Dashboard';
 import DadosConexao from './pages/dashboard/DadosConexao';
 import Configuracoes from './pages/dashboard/Configuracoes';
 import Players from './pages/dashboard/Players';
-import GerenciarVideos from './pages/dashboard/Gerenciarvideos'; // Corrigido para maiúsculo
+import GerenciarVideos from './pages/dashboard/Gerenciarvideos';
 import Playlists from './pages/dashboard/Playlists';
 
 // Layouts

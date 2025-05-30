@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { Outlet, NavLink } from 'react-router-dom';
+import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { Menu, X, FileVideo, LogOut, User, Settings, Bell } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import Logo from '/logo.png'; // ajuste o caminho conforme necessário
+import { motion, AnimatePresence } from 'framer-motion';
+import Logo from '/logo.png';
 
 const DashboardLayout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, logout } = useAuth();
+  const location = useLocation();
 
   const toggleSidebar = () => {
     setSidebarOpen(!sidebarOpen);
@@ -14,14 +16,12 @@ const DashboardLayout: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-gray-100">
-      {/* Sidebar */}
       <aside
         className={`${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         } fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-md transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:h-auto`}
       >
         <div className="flex flex-col h-full">
-          {/* Sidebar header */}
           <div className="flex items-center justify-between px-10 py-6 border-b">
             <div className="flex items-center">
               <img src={Logo} alt="Logo" className="h-20 w-auto mr-2" />
@@ -34,7 +34,6 @@ const DashboardLayout: React.FC = () => {
             </button>
           </div>
 
-          {/* Sidebar content */}
           <nav className="flex-1 px-4 py-6 overflow-y-auto">
             <ul className="space-y-2">
               <li>
@@ -158,7 +157,6 @@ const DashboardLayout: React.FC = () => {
             </ul>
           </nav>
 
-          {/* Sidebar footer */}
           <div className="px-4 py-6 border-t">
             <button
               onClick={logout}
@@ -171,9 +169,7 @@ const DashboardLayout: React.FC = () => {
         </div>
       </aside>
 
-      {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Top header */}
         <header className="bg-white shadow-sm z-10">
           <div className="px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
             <button
@@ -186,23 +182,32 @@ const DashboardLayout: React.FC = () => {
               <button className="p-1 rounded-full text-gray-600 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 mr-3">
                 <Bell className="h-6 w-6" />
               </button>
-              <div className="relative">
-                <div className="flex items-center">
-                  <div className="h-8 w-8 rounded-full bg-primary-600 flex items-center justify-center text-white">
-                    <User className="h-5 w-5" />
-                  </div>
-                  <span className="ml-2 font-medium text-gray-700">
-                    {user?.nome ? user.nome : 'Usuário'}
-                  </span>
+              <div className="relative flex items-center">
+                <div className="h-8 w-8 rounded-full bg-primary-600 flex items-center justify-center text-white">
+                  <User className="h-5 w-5" />
                 </div>
+                {user?.nome ? (
+                  <span className="ml-2 font-medium text-gray-700">{user.nome}</span>
+                ) : (
+                  <div className="ml-2 w-24 h-4 bg-gray-300 rounded animate-pulse" />
+                )}
               </div>
             </div>
           </div>
         </header>
 
-        {/* Page content */}
         <main className="flex-1 overflow-y-auto bg-gray-100 p-4 sm:p-6 lg:p-8">
-          <Outlet />
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={location.pathname}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+            >
+              <Outlet />
+            </motion.div>
+          </AnimatePresence>
         </main>
       </div>
     </div>

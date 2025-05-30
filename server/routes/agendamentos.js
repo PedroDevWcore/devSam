@@ -1,3 +1,9 @@
+import express from 'express';
+const router = express.Router();
+
+import { supabase } from '../supabaseClient.js';
+import supabaseAuthMiddleware from '../middlewares/supabaseAuthMiddleware.js';
+
 router.get('/', supabaseAuthMiddleware, async (req, res) => {
     const { ano, mes, data, mesAno } = req.query;
     const userId = req.user?.id;
@@ -45,7 +51,6 @@ router.get('/', supabaseAuthMiddleware, async (req, res) => {
             return res.status(500).json({ error: error.message });
         }
 
-        // Desembrulha os nomes das playlists para simplificar o frontend
         const agendamentosComNomes = agendamentos.map(ag => ({
             ...ag,
             nome_playlist_principal: ag.playlist_principal?.nome ?? '-',
@@ -56,6 +61,6 @@ router.get('/', supabaseAuthMiddleware, async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: err.message || 'Erro interno no servidor' });
     }
-
 });
+
 export default router;

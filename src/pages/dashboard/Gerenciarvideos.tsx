@@ -16,9 +16,14 @@ type Video = {
 };
 
 function formatarDuracao(segundos: number): string {
-  const m = Math.floor(segundos / 60);
+  const h = Math.floor(segundos / 3600);
+  const m = Math.floor((segundos % 3600) / 60);
   const s = Math.floor(segundos % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
+  if (h > 0) {
+    return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  } else {
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  }
 }
 
 function formatarTamanho(bytes: number): string {
@@ -39,16 +44,9 @@ export default function GerenciarVideos() {
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [playlistSelecionada, setPlaylistSelecionada] = useState<Playlist | null>(null);
   const [novoPlaylistNome, setNovoPlaylistNome] = useState("");
-  const [editPlaylistId, setEditPlaylistId] = useState<number | null>(null);
-  const [editPlaylistNome, setEditPlaylistNome] = useState("");
-
   const [videos, setVideos] = useState<Video[]>([]);
-  const [editVideoId, setEditVideoId] = useState<number | null>(null);
-  const [editVideoNome, setEditVideoNome] = useState("");
-
   const [uploadFiles, setUploadFiles] = useState<FileList | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
 
   useEffect(() => {
     fetchPlaylists();
@@ -80,20 +78,28 @@ export default function GerenciarVideos() {
   };
 
   const fetchVideos = async (playlist_id: number) => {
-    try {
-      const token = await getToken();
-      const response = await fetch(`/api/videos?playlist_id=${playlist_id}`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
-      const data = await response.json();
-      setVideos(data);
-    } catch (error) {
-      console.error("Erro ao buscar vídeos:", error);
-      toast.error("Erro ao carregar vídeos");
+  try {
+    const token = await getToken();
+    const response = await fetch(`/api/videos?playlist_id=${playlist_id}`, {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+    
+    if (!response.ok) {
+      // Pode lançar erro para o catch
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
-  };
+    
+    const data = await response.json();
+    setVideos(Array.isArray(data) ? data : []);
+  } catch (error) {
+    console.error("Erro ao buscar vídeos:", error);
+    toast.error("Erro ao carregar vídeos");
+    setVideos([]); // garantir que videos seja array
+  }
+};
+
 
   const handleFilesChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -143,7 +149,6 @@ export default function GerenciarVideos() {
       return;
     }
     setUploading(true);
-    setUploadProgress({});
 
     try {
       const token = await getToken();

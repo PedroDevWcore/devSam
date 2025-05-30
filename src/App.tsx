@@ -8,14 +8,14 @@ import ForgotPassword from './pages/auth/ForgotPassword';
 import Register from './pages/auth/Register';
 import ConfirmEmail from './pages/auth/ConfirmEmail';
 import ResetPassword from './pages/auth/ResetPassword';
-import AuthCallback from './pages/auth/AuthCallback'; // <-- importação do callback
+import AuthCallback from './pages/auth/AuthCallback';
 
 // Dashboard Pages
 import Dashboard from './pages/dashboard/Dashboard';
 import DadosConexao from './pages/dashboard/DadosConexao';
 import Configuracoes from './pages/dashboard/Configuracoes';
 import Players from './pages/dashboard/Players';
-import GerenciarVideos from './pages/dashboard/Gerenciarvideos';
+import GerenciarVideos from './pages/dashboard/Gerenciarvideos'; // Corrigido para maiúsculo
 import Playlists from './pages/dashboard/Playlists';
 
 // Layouts
@@ -23,8 +23,14 @@ import AuthLayout from './layouts/AuthLayout';
 import DashboardLayout from './layouts/DashboardLayout';
 
 // Context
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import PrivateRoute from './components/PrivateRoute';
+
+// Componente que redireciona baseado na autenticação
+const RedirectToProperPlace = () => {
+  const { user } = useAuth();
+  return <Navigate to={user ? '/dashboard' : '/login'} />;
+};
 
 function App() {
   return (
@@ -33,13 +39,13 @@ function App() {
         <Routes>
           {/* Auth Routes */}
           <Route path="/" element={<AuthLayout />}>
-            <Route index element={<Navigate to="/login" />} />
+            <Route index element={<RedirectToProperPlace />} />
             <Route path="login" element={<Login />} />
             <Route path="forgot-password" element={<ForgotPassword />} />
             <Route path="register" element={<Register />} />
             <Route path="confirm" element={<ConfirmEmail />} />
             <Route path="reset-password" element={<ResetPassword />} />
-            <Route path="auth/callback" element={<AuthCallback />} /> {/* <-- Rota callback */}
+            <Route path="auth/callback" element={<AuthCallback />} />
           </Route>
 
           {/* Dashboard Routes */}
@@ -62,7 +68,7 @@ function App() {
           {/* Fallback route */}
           <Route path="*" element={<Navigate to="/login" />} />
         </Routes>
-        <ToastContainer position="top-right" autoClose={3000} />
+        <ToastContainer position="top-right" autoClose={3000} theme="colored" />
       </AuthProvider>
     </Router>
   );

@@ -1,10 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { ChevronLeft, PlusCircle, X, Edit2, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { supabase } from '../../lib/supabase'; // use seu caminho real
-import type { Database } from '../../lib/types/supabaseTypes'; // ajuste o caminho
+import { supabase } from '../../lib/supabase';
+import type { Database } from '../../lib/types/supabase';
 
-type Playlist = Database['public']['Tables']['playlists']['Row'];
+type PlaylistBase = Database['public']['Tables']['playlists']['Row'];
+
+type Playlist = PlaylistBase & {
+  quantidadeVideos?: number;
+  duracaoTotal?: number;
+};
 
 const Playlists: React.FC = () => {
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
@@ -16,15 +21,51 @@ const Playlists: React.FC = () => {
 
   const carregarPlaylists = async () => {
     setStatus(null);
-    const { data, error } = await supabase
-      .from('playlists')
-      .select('*');
 
-    if (error) {
-      setStatus('Erro ao carregar playlists');
-    } else {
-      setPlaylists(data || []);
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      setStatus('Usuário não autenticado');
+      setPlaylists([]);
+      return;
     }
+
+    const { data: playlistsData, error: playlistsError } = await supabase
+      .from('playlists')
+      .select('*')
+      .eq('id_user', user.id);
+
+    if (playlistsError) {
+      setStatus('Erro ao carregar playlists');
+      return;
+    }
+
+    const playlistsComStats = await Promise.all(
+      (playlistsData || []).map(async (playlist) => {
+        const { data: videos, error: videosError } = await supabase
+          .from('videos')
+          .select('duracao')
+          .eq('id_playlist', playlist.id);
+
+        if (videosError) {
+          return { ...playlist, quantidadeVideos: 0, duracaoTotal: 0 };
+        }
+
+        const quantidadeVideos = videos.length;
+        const duracaoTotal = videos.reduce((acc, video) => acc + (video.duracao ?? 0), 0);
+
+        return {
+          ...playlist,
+          quantidadeVideos,
+          duracaoTotal,
+        };
+      })
+    );
+
+    setPlaylists(playlistsComStats);
   };
 
   useEffect(() => {
@@ -36,12 +77,24 @@ const Playlists: React.FC = () => {
     setStatus(null);
     setLoading(true);
 
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      setStatus('Usuário não autenticado');
+      setLoading(false);
+      return;
+    }
+
     try {
       if (editingId !== null) {
         const { error } = await supabase
           .from('playlists')
           .update({ nome: nomePlaylist })
-          .eq('id', editingId);
+          .eq('id', editingId)
+          .eq('id_user', user.id);
 
         if (error) throw error;
 
@@ -49,7 +102,7 @@ const Playlists: React.FC = () => {
       } else {
         const { error } = await supabase
           .from('playlists')
-          .insert({ nome: nomePlaylist });
+          .insert({ nome: nomePlaylist, id_user: user.id });
 
         if (error) throw error;
 
@@ -68,7 +121,7 @@ const Playlists: React.FC = () => {
   };
 
   const abrirEditar = (playlist: Playlist) => {
-    setNomePlaylist(playlist.nome ?? "");
+    setNomePlaylist(playlist.nome ?? '');
     setEditingId(playlist.id);
     setShowModal(true);
     setStatus(null);
@@ -78,10 +131,21 @@ const Playlists: React.FC = () => {
     if (!window.confirm('Confirma a exclusão desta playlist?')) return;
     setStatus(null);
 
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      setStatus('Usuário não autenticado');
+      return;
+    }
+
     const { error } = await supabase
       .from('playlists')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .eq('id_user', user.id);
 
     if (error) {
       setStatus('Erro ao deletar playlist');
@@ -144,9 +208,7 @@ const Playlists: React.FC = () => {
             {playlists.map((playlist, index) => (
               <tr key={playlist.id} className="border-b hover:bg-gray-50">
                 <td className="px-4 py-2">{index + 1}</td>
-                <td className="px-4 py-2">
-                  {playlist.nome}
-                </td>
+                <td className="px-4 py-2">{playlist.nome}</td>
                 <td className="px-4 py-2">{playlist.quantidadeVideos || 0}</td>
                 <td className="px-4 py-2">{formatarDuracao(playlist.duracaoTotal || 0)}</td>
                 <td className="px-4 py-2 text-right space-x-2">

@@ -23,7 +23,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
   forgotPassword: (email: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
-  getToken: () => Promise<string | null>;  // <-- Adicionado
+  getToken: () => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -39,15 +39,22 @@ export const useAuth = () => {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [loading, setLoading] = useState(true); // Novo estado loading
   const navigate = useNavigate();
 
   useEffect(() => {
+    // Verifica a sessão ao montar o provider
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
-        setUserData(session.user);
+        setUserData(session.user).finally(() => setLoading(false));
+      } else {
+        setUser(null);
+        setIsAuthenticated(false);
+        setLoading(false);
       }
     });
 
+    // Assina para mudanças na autenticação (login/logout)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
         setUserData(session.user);
@@ -86,6 +93,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error) {
       console.error('Error setting user data:', error);
       toast.error('Erro ao carregar dados do usuário');
+      setUser(null);
+      setIsAuthenticated(false);
     }
   };
 
@@ -182,6 +191,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw error;
     }
   };
+
+  // Renderiza um fallback enquanto carrega a sessão
+  if (loading) {
+    return <div>Carregando...</div>; // Aqui pode ser um spinner ou qualquer componente de loading
+  }
 
   return (
     <AuthContext.Provider value={{ user, isAuthenticated, login, logout, forgotPassword, register, getToken }}>

@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import VideoPlayer from '../../components/VideoPlayer';
 import { 
   Settings, Users, BarChart, FileVideo, 
-  PlayCircle, Play, Smartphone, Monitor, RefreshCw,
+  PlayCircle, Play, Smartphone, RefreshCw,
   FolderPlus, Calendar, Youtube, Wifi, ArrowLeftRight
 } from 'lucide-react';
 

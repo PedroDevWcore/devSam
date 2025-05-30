@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'http://localhost:3001/api',
+  baseURL: '/api',
 });
 
 // Interceptador para enviar token, se existir (ajuste conforme seu auth)

@@ -65,7 +65,7 @@ export default function GerenciarVideos() {
   const fetchPlaylists = async () => {
     try {
       const token = await getToken();
-      const response = await fetch("http://localhost:3001/api/playlists", {
+      const response = await fetch("/api/playlists", {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -82,7 +82,7 @@ export default function GerenciarVideos() {
   const fetchVideos = async (playlist_id: number) => {
     try {
       const token = await getToken();
-      const response = await fetch(`http://localhost:3001/api/videos?playlist_id=${playlist_id}`, {
+      const response = await fetch(`/api/videos?playlist_id=${playlist_id}`, {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -158,7 +158,7 @@ export default function GerenciarVideos() {
         formData.append("tamanho", file.size.toString());
 
         try {
-          const response = await fetch("http://localhost:3001/api/videos/upload", {
+          const response = await fetch("/api/videos/upload", {
             method: "POST",
             headers: {
               Authorization: `Bearer ${token}`
@@ -198,7 +198,7 @@ export default function GerenciarVideos() {
     
     try {
       const token = await getToken();
-      const response = await fetch("http://localhost:3001/api/playlists", {
+      const response = await fetch("/api/playlists", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -224,7 +224,7 @@ export default function GerenciarVideos() {
     
     try {
       const token = await getToken();
-      const response = await fetch(`http://localhost:3001/api/playlists/${id}`, {
+      const response = await fetch(`/api/playlists/${id}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`
@@ -250,7 +250,7 @@ export default function GerenciarVideos() {
     
     try {
       const token = await getToken();
-      const response = await fetch(`http://localhost:3001/api/videos/${id}`, {
+      const response = await fetch(`/api/videos/${id}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`

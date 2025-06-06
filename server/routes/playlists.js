@@ -3,7 +3,7 @@ import { supabase, supabaseAuthMiddleware } from '../supabaseClient.js';
 
 const router = express.Router();
 
-// GET playlists — agora apenas do usuário autenticado
+// GET playlists do usuário autenticado
 router.get('/', supabaseAuthMiddleware, async (req, res) => {
   try {
     const id_user = req.user.id;
@@ -21,6 +21,7 @@ router.get('/', supabaseAuthMiddleware, async (req, res) => {
   }
 });
 
+// POST nova playlist
 router.post('/', supabaseAuthMiddleware, async (req, res) => {
   try {
     const { nome } = req.body;
@@ -35,6 +36,7 @@ router.post('/', supabaseAuthMiddleware, async (req, res) => {
   }
 });
 
+// PUT atualizar nome da playlist
 router.put('/:id', supabaseAuthMiddleware, async (req, res) => {
   try {
     const idNum = parseInt(req.params.id, 10);
@@ -57,6 +59,7 @@ router.put('/:id', supabaseAuthMiddleware, async (req, res) => {
   }
 });
 
+// DELETE playlist
 router.delete('/:id', supabaseAuthMiddleware, async (req, res) => {
   try {
     const idNum = parseInt(req.params.id, 10);
@@ -74,6 +77,155 @@ router.delete('/:id', supabaseAuthMiddleware, async (req, res) => {
     res.status(204).send();
   } catch (err) {
     res.status(500).json({ error: 'Erro ao excluir playlist', details: err.message });
+  }
+});
+
+// GET vídeos da playlist com ordem
+router.get('/:id/videos', supabaseAuthMiddleware, async (req, res) => {
+  try {
+    const idPlaylist = parseInt(req.params.id, 10);
+    if (isNaN(idPlaylist)) return res.status(400).json({ error: 'ID inválido' });
+
+    // Verifica se a playlist pertence ao usuário
+    const { data: playlist, error: playlistError } = await supabase
+      .from('playlists')
+      .select('id')
+      .eq('id', idPlaylist)
+      .eq('id_user', req.user.id)
+      .single();
+
+    if (playlistError) throw playlistError;
+    if (!playlist) return res.status(404).json({ error: 'Playlist não encontrada ou sem permissão' });
+
+    // Busca vídeos na playlist com dados do vídeo
+    const { data, error } = await supabase
+      .from('playlist_videos')
+      .select('id, ordem, videos(*)')
+      .eq('id_playlist', idPlaylist)
+      .order('ordem', { ascending: true });
+
+    if (error) throw error;
+
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao buscar vídeos da playlist', details: err.message });
+  }
+});
+
+// POST adicionar vídeo à playlist (no final)
+router.post('/:id/videos', supabaseAuthMiddleware, async (req, res) => {
+  try {
+    const idPlaylist = parseInt(req.params.id, 10);
+    const { id_video } = req.body;
+
+    if (isNaN(idPlaylist) || !id_video) return res.status(400).json({ error: 'Dados inválidos' });
+
+    // Verifica se playlist pertence ao usuário
+    const { data: playlist, error: playlistError } = await supabase
+      .from('playlists')
+      .select('id')
+      .eq('id', idPlaylist)
+      .eq('id_user', req.user.id)
+      .single();
+
+    if (playlistError) throw playlistError;
+    if (!playlist) return res.status(404).json({ error: 'Playlist não encontrada ou sem permissão' });
+
+    // Busca maior ordem atual
+    const { data: maxOrderData, error: maxOrderError } = await supabase
+      .from('playlist_videos')
+      .select('ordem')
+      .eq('id_playlist', idPlaylist)
+      .order('ordem', { ascending: false })
+      .limit(1);
+
+    if (maxOrderError) throw maxOrderError;
+
+    const maxOrder = (maxOrderData && maxOrderData.length > 0) ? maxOrderData[0].ordem : -1;
+    const novaOrdem = maxOrder + 1;
+
+    // Insere vídeo na playlist com nova ordem
+    const { data, error } = await supabase
+      .from('playlist_videos')
+      .insert([{ id_playlist: idPlaylist, id_video, ordem: novaOrdem }])
+      .select();
+
+    if (error) throw error;
+
+    res.status(201).json(data[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao adicionar vídeo na playlist', details: err.message });
+  }
+});
+
+// PUT atualizar ordem dos vídeos na playlist
+router.put('/:id/videos/order', supabaseAuthMiddleware, async (req, res) => {
+  try {
+    const idPlaylist = parseInt(req.params.id, 10);
+    const { orderUpdates } = req.body; // array [{ id: playlist_video_id, ordem: number }, ...]
+
+    if (isNaN(idPlaylist) || !Array.isArray(orderUpdates)) {
+      return res.status(400).json({ error: 'Dados inválidos' });
+    }
+
+    // Verifica permissão na playlist
+    const { data: playlist, error: playlistError } = await supabase
+      .from('playlists')
+      .select('id')
+      .eq('id', idPlaylist)
+      .eq('id_user', req.user.id)
+      .single();
+
+    if (playlistError) throw playlistError;
+    if (!playlist) return res.status(404).json({ error: 'Playlist não encontrada ou sem permissão' });
+
+    // Atualiza cada registro (ideal: fazer em batch ou transaction)
+    for (const item of orderUpdates) {
+      await supabase
+        .from('playlist_videos')
+        .update({ ordem: item.ordem })
+        .eq('id', item.id)
+        .eq('id_playlist', idPlaylist);
+    }
+
+    res.json({ message: 'Ordem atualizada com sucesso' });
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao atualizar ordem', details: err.message });
+  }
+});
+
+// DELETE remover vídeo da playlist
+router.delete('/:id/videos/:idVideo', supabaseAuthMiddleware, async (req, res) => {
+  try {
+    const idPlaylist = parseInt(req.params.id, 10);
+    const idVideoPlaylist = parseInt(req.params.idVideo, 10);
+
+    if (isNaN(idPlaylist) || isNaN(idVideoPlaylist)) return res.status(400).json({ error: 'IDs inválidos' });
+
+    // Verifica permissão na playlist
+    const { data: playlist, error: playlistError } = await supabase
+      .from('playlists')
+      .select('id')
+      .eq('id', idPlaylist)
+      .eq('id_user', req.user.id)
+      .single();
+
+    if (playlistError) throw playlistError;
+    if (!playlist) return res.status(404).json({ error: 'Playlist não encontrada ou sem permissão' });
+
+    // Deleta o vídeo da playlist
+    const { data, error } = await supabase
+      .from('playlist_videos')
+      .delete()
+      .eq('id', idVideoPlaylist)
+      .eq('id_playlist', idPlaylist);
+
+    if (error) throw error;
+    if (data.length === 0) return res.status(404).json({ error: 'Vídeo na playlist não encontrado' });
+
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao remover vídeo da playlist', details: err.message });
   }
 });
 

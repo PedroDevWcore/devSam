@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
-import { Menu, X, FileVideo, LogOut, User, Settings, Bell } from 'lucide-react';
+import { Menu, FileVideo, LogOut, User, Settings, Bell } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import Logo from '/logo.png';
@@ -14,24 +14,37 @@ const DashboardLayout: React.FC = () => {
     setSidebarOpen(!sidebarOpen);
   };
 
+  // Fecha sidebar ao clicar fora, só no mobile
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (sidebarOpen) {
+        const sidebar = document.getElementById('sidebar');
+        if (sidebar && !sidebar.contains(event.target as Node)) {
+          setSidebarOpen(false);
+        }
+      }
+    };
+    if (sidebarOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    } else {
+      document.removeEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [sidebarOpen]);
+
   return (
     <div className="flex h-screen bg-gray-100">
       <aside
+        id="sidebar"
         className={`${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         } fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-md transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:h-auto`}
       >
         <div className="flex flex-col h-full">
-          <div className="flex items-center justify-between px-10 py-6 border-b">
-            <div className="flex items-center">
-              <img src={Logo} alt="Logo" className="h-20 w-auto mr-2" />
-            </div>
-            <button
-              className="p-1 rounded-md lg:hidden focus:outline-none focus:ring-2 focus:ring-primary-500"
-              onClick={toggleSidebar}
-            >
-              <X className="h-6 w-6 text-gray-600" />
-            </button>
+          <div className="flex items-center px-10 py-6 border-b">
+            <img src={Logo} alt="Logo" className="h-20 w-auto mr-2" />
           </div>
 
           <nav className="flex-1 px-4 py-6 overflow-y-auto">
@@ -47,7 +60,12 @@ const DashboardLayout: React.FC = () => {
                   end
                 >
                   <span className="mr-3">
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg
+                      className="h-5 w-5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
@@ -69,7 +87,12 @@ const DashboardLayout: React.FC = () => {
                   }
                 >
                   <span className="mr-3">
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg
+                      className="h-5 w-5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
@@ -106,7 +129,12 @@ const DashboardLayout: React.FC = () => {
                   }
                 >
                   <span className="mr-3">
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg
+                      className="h-5 w-5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
@@ -186,11 +214,7 @@ const DashboardLayout: React.FC = () => {
                 <div className="h-8 w-8 rounded-full bg-primary-600 flex items-center justify-center text-white">
                   <User className="h-5 w-5" />
                 </div>
-                {user?.nome ? (
-                  <span className="ml-2 font-medium text-gray-700">{user.nome}</span>
-                ) : (
-                  <div className="ml-2 w-24 h-4 bg-gray-300 rounded animate-pulse" />
-                )}
+                <span className="ml-2 font-medium text-gray-700">{user?.nome || 'Usuário'}</span>
               </div>
             </div>
           </div>

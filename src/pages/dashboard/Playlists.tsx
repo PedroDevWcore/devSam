@@ -1,17 +1,32 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronLeft, PlusCircle, X, Edit2, Trash2 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { ChevronDown, ChevronRight, PlusCircle, X, Edit2, Trash2, Play } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import type { Database } from '../../lib/types/supabase';
+import type { Database } from '../../lib/types/supabasetypes';
 
-type PlaylistBase = Database['public']['Tables']['playlists']['Row'];
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
 
-type Playlist = PlaylistBase & {
-  quantidadeVideos?: number;
-  duracaoTotal?: number;
-};
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+
+import { CSS } from '@dnd-kit/utilities';
 
 const Playlists: React.FC = () => {
+  type PlaylistBase = Database['public']['Tables']['playlists']['Row'];
+  type Playlist = PlaylistBase & { quantidadeVideos?: number; duracaoTotal?: number };
+  type Folder = Database['public']['Tables']['folders']['Row'];
+  type Video = Database['public']['Tables']['videos']['Row'];
+
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -19,212 +34,399 @@ const Playlists: React.FC = () => {
   const [nomePlaylist, setNomePlaylist] = useState('');
   const [editingId, setEditingId] = useState<number | null>(null);
 
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [videosByFolder, setVideosByFolder] = useState<Record<number, Video[]>>({});
+  const [selectedVideos, setSelectedVideos] = useState<Video[]>([]);
+  const [expandedFolders, setExpandedFolders] = useState<Record<number, boolean>>({});
+
+  const [videoPlayerModalOpen, setVideoPlayerModalOpen] = useState(false);
+  const [videoPlayerSrc, setVideoPlayerSrc] = useState<string>('');
+  const [playlistVideosToPlay, setPlaylistVideosToPlay] = useState<Video[]>([]);
+  const [playlistPlayerIndex, setPlaylistPlayerIndex] = useState(0);
+
   const carregarPlaylists = async () => {
     setStatus(null);
-
     const {
       data: { user },
       error: userError,
     } = await supabase.auth.getUser();
+    if (userError || !user) return setStatus('Usuário não autenticado');
 
-    if (userError || !user) {
-      setStatus('Usuário não autenticado');
-      setPlaylists([]);
-      return;
-    }
-
-    const { data: playlistsData, error: playlistsError } = await supabase
+    const { data: playlistsData } = await supabase
       .from('playlists')
       .select('*')
       .eq('id_user', user.id);
 
-    if (playlistsError) {
-      setStatus('Erro ao carregar playlists');
-      return;
-    }
-
     const playlistsComStats = await Promise.all(
       (playlistsData || []).map(async (playlist) => {
-        const { data: videos, error: videosError } = await supabase
-          .from('videos')
-          .select('duracao')
+        const { data: playlistVideos } = await supabase
+          .from('playlist_videos')
+          .select('videos(duracao)')
           .eq('id_playlist', playlist.id);
 
-        if (videosError) {
-          return { ...playlist, quantidadeVideos: 0, duracaoTotal: 0 };
-        }
+        const quantidadeVideos = playlistVideos?.length || 0;
 
-        const quantidadeVideos = videos.length;
-        const duracaoTotal = videos.reduce((acc, video) => acc + (video.duracao ?? 0), 0);
+        const duracaoTotal = (playlistVideos || []).reduce((acc, item) => {
+          const videosField = (item as any).videos;
+          let duracao = 0;
+          if (Array.isArray(videosField)) {
+            duracao = Math.ceil(videosField[0]?.duracao ?? 0);
+          } else if (videosField && typeof videosField === 'object') {
+            duracao = Math.ceil(videosField.duracao ?? 0);
+          }
+          return acc + duracao;
+        }, 0);
 
-        return {
-          ...playlist,
-          quantidadeVideos,
-          duracaoTotal,
-        };
+        return { ...playlist, quantidadeVideos, duracaoTotal };
       })
     );
 
     setPlaylists(playlistsComStats);
   };
 
+  const carregarFoldersEVideos = async () => {
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
+    if (error || !user) return;
+
+    const { data: foldersData } = await supabase
+      .from('folders')
+      .select('*')
+      .eq('id_user', user.id)
+      .order('nome');
+
+    if (!foldersData) return;
+    setFolders(foldersData);
+    setExpandedFolders(Object.fromEntries(foldersData.map((f) => [f.id, false])));
+
+    const folderIds = foldersData.map((f) => f.id);
+    const { data: videosData } = await supabase
+      .from('videos')
+      .select('*')
+      .in('id_folder', folderIds)
+      .order('nome');
+
+    const grouped: Record<number, Video[]> = {};
+    foldersData.forEach(f => grouped[f.id] = []);
+    (videosData || []).forEach(v => grouped[v.id_folder]?.push(v));
+    setVideosByFolder(grouped);
+  };
+
   useEffect(() => {
     carregarPlaylists();
   }, []);
 
+  const abrirModal = async (playlist?: Playlist) => {
+    setStatus(null);
+    await carregarFoldersEVideos();
+    if (playlist) {
+      setNomePlaylist(playlist.nome ?? '');
+      setEditingId(playlist.id);
+      const { data: selected } = await supabase
+        .from('playlist_videos')
+        .select('videos(*)')
+        .eq('id_playlist', playlist.id)
+        .order('ordem');
+      setSelectedVideos(selected?.map(item => (item as any).videos) || []);
+    } else {
+      setNomePlaylist('');
+      setEditingId(null);
+      setSelectedVideos([]);
+    }
+    setShowModal(true);
+  };
+
   const salvarPlaylist = async (e: React.FormEvent) => {
     e.preventDefault();
-    setStatus(null);
     setLoading(true);
-
     const {
       data: { user },
-      error: userError,
     } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      setStatus('Usuário não autenticado');
-      setLoading(false);
-      return;
-    }
+    if (!user) return setStatus('Usuário não autenticado');
 
     try {
-      if (editingId !== null) {
-        const { error } = await supabase
-          .from('playlists')
-          .update({ nome: nomePlaylist })
-          .eq('id', editingId)
-          .eq('id_user', user.id);
+      let playlistId = editingId;
 
-        if (error) throw error;
-
-        setStatus('Playlist atualizada com sucesso!');
+      if (editingId) {
+        await supabase.from('playlists').update({ nome: nomePlaylist }).eq('id', editingId);
       } else {
-        const { error } = await supabase
+        const { data } = await supabase
           .from('playlists')
-          .insert({ nome: nomePlaylist, id_user: user.id });
+          .insert({ nome: nomePlaylist, id_user: user.id })
+          .select('id')
+          .single();
+        playlistId = data?.id;
+      }
 
-        if (error) throw error;
+      if (playlistId) {
+        await supabase.from('playlist_videos').delete().eq('id_playlist', playlistId);
 
-        setStatus('Playlist criada com sucesso!');
+        const insertData = selectedVideos.map((video, index) => ({
+          id_playlist: playlistId,
+          id_video: video.id,
+          ordem: index,
+        }));
+
+        await supabase.from('playlist_videos').insert(insertData);
       }
 
       setShowModal(false);
       setNomePlaylist('');
       setEditingId(null);
-      await carregarPlaylists();
-    } catch (error: any) {
-      setStatus(error.message || 'Erro ao salvar playlist');
+      setSelectedVideos([]);
+      carregarPlaylists();
+    } catch (err: any) {
+      setStatus(err.message || 'Erro ao salvar playlist');
     } finally {
       setLoading(false);
     }
   };
 
-  const abrirEditar = (playlist: Playlist) => {
-    setNomePlaylist(playlist.nome ?? '');
-    setEditingId(playlist.id);
-    setShowModal(true);
-    setStatus(null);
+  const deletarPlaylist = async (id: number) => {
+    if (!window.confirm('Deseja deletar esta playlist?')) return;
+    await supabase.from('playlists').delete().eq('id', id);
+    await supabase.from('playlist_videos').delete().eq('id_playlist', id);
+    carregarPlaylists();
   };
 
-  const deletarPlaylist = async (id: number) => {
-    if (!window.confirm('Confirma a exclusão desta playlist?')) return;
-    setStatus(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
+  );
 
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
+  const onDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+    if (
+      active.id.toString().startsWith('selected-') &&
+      over.id.toString().startsWith('selected-')
+    ) {
+      const oldIndex = Number(active.id.toString().replace('selected-', ''));
+      const newIndex = Number(over.id.toString().replace('selected-', ''));
+      if (oldIndex !== newIndex) {
+        setSelectedVideos((items) => arrayMove(items, oldIndex, newIndex));
+      }
+    } else if (
+      active.id.toString().startsWith('available-') &&
+      (over.id.toString() === 'selected-container' ||
+        over.id.toString().startsWith('selected-'))
+    ) {
+      const videoId = Number(active.id.toString().replace('available-', ''));
+      const video = Object.values(videosByFolder)
+        .flat()
+        .find((v) => v.id === videoId);
+      if (video) {
+        setSelectedVideos((prev) => [...prev, video]);
+      }
+    }
+  };
 
-    if (userError || !user) {
-      setStatus('Usuário não autenticado');
+  function AvailableVideo({ video, index }: { video: Video; index: number }) {
+    const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: `available-${video.id}` });
+    const style = {
+      transform: CSS.Translate.toString(transform),
+      transition,
+      cursor: 'grab',
+    };
+    return (
+      <li
+        ref={setNodeRef}
+        style={style}
+        {...attributes}
+        {...listeners}
+        className="p-1 text-sm hover:bg-zinc-100 rounded flex justify-between items-center cursor-pointer"
+      >
+        <span onClick={() => setSelectedVideos((prev) => [...prev, video])}>
+          {video.nome}
+        </span>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (video.url) {
+              setVideoPlayerSrc(video.url);
+              setVideoPlayerModalOpen(true);
+            }
+          }}
+          className="text-blue-600 hover:text-blue-800 p-1"
+          title="Assistir vídeo"
+        >
+          <Play size={16} />
+        </button>
+      </li>
+    );
+  }
+
+  function SelectedVideo({ video, index }: { video: Video; index: number }) {
+    const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: `selected-${index}` });
+    const style = {
+      transform: CSS.Translate.toString(transform),
+      transition,
+      cursor: 'grab',
+    };
+    return (
+      <li
+        ref={setNodeRef}
+        style={style}
+        {...attributes}
+        {...listeners}
+        className="flex justify-between items-center p-2 mb-1 bg-zinc-100 rounded cursor-move"
+      >
+        <span>{video.nome}</span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (video.url) {
+                setVideoPlayerSrc(video.url);
+                setVideoPlayerModalOpen(true);
+              }
+            }}
+            className="text-blue-600 hover:text-blue-800 p-1"
+            title="Assistir vídeo"
+          >
+            <Play size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedVideos((prev) => {
+                const copy = [...prev];
+                copy.splice(index, 1);
+                return copy;
+              });
+            }}
+            className="text-red-600"
+            title="Remover vídeo"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      </li>
+    );
+  }
+
+  const adicionarTodosDaPasta = (folderId: number) => {
+    const videos = videosByFolder[folderId] || [];
+    setSelectedVideos(prev => [...prev, ...videos]);
+  };
+
+  const removerTodos = () => setSelectedVideos([]);
+
+  const toggleFolder = (id: number) => setExpandedFolders(prev => ({ ...prev, [id]: !prev[id] }));
+
+  const formatarDuracao = (s: number) =>
+    [Math.floor(s / 3600), Math.floor((s % 3600) / 60), s % 60]
+      .map(v => String(v).padStart(2, '0'))
+      .join(':');
+
+  const abrirPlayerPlaylist = async (playlistId: number) => {
+    setPlaylistVideosToPlay([]);
+    setPlaylistPlayerIndex(0);
+    setVideoPlayerModalOpen(false);
+
+    const { data: playlistVideos, error } = await supabase
+      .from('playlist_videos')
+      .select('videos(*)')
+      .eq('id_playlist', playlistId)
+      .order('ordem', { ascending: true });
+
+    if (error || !playlistVideos) {
+      alert('Erro ao carregar vídeos da playlist');
       return;
     }
 
-    const { error } = await supabase
-      .from('playlists')
-      .delete()
-      .eq('id', id)
-      .eq('id_user', user.id);
+    const videos: Video[] = playlistVideos.map((item) => (item as any).videos);
+    setPlaylistVideosToPlay(videos);
+    setPlaylistPlayerIndex(0);
+    setVideoPlayerModalOpen(true);
+  };
 
-    if (error) {
-      setStatus('Erro ao deletar playlist');
+  useEffect(() => {
+    if (playlistVideosToPlay.length > 0 && videoPlayerModalOpen) {
+      setVideoPlayerSrc(playlistVideosToPlay[playlistPlayerIndex]?.url || '');
+    }
+  }, [playlistPlayerIndex, playlistVideosToPlay, videoPlayerModalOpen]);
+
+  const handleVideoEnded = () => {
+    if (playlistPlayerIndex < playlistVideosToPlay.length - 1) {
+      setPlaylistPlayerIndex(i => i + 1);
     } else {
-      setStatus('Playlist deletada com sucesso!');
-      await carregarPlaylists();
+      setVideoPlayerModalOpen(false);
+      setPlaylistVideosToPlay([]);
+      setPlaylistPlayerIndex(0);
     }
   };
 
-  const formatarDuracao = (segundos: number) => {
-    const h = Math.floor(segundos / 3600).toString().padStart(2, '0');
-    const m = Math.floor((segundos % 3600) / 60).toString().padStart(2, '0');
-    const s = Math.floor(segundos % 60).toString().padStart(2, '0');
-    return `${h}:${m}:${s}`;
-  };
-
   return (
-    <div className="space-y-6 relative">
-      <div className="flex items-center mb-6">
-        <Link to="/dashboard" className="flex items-center text-primary-600 hover:text-primary-800">
-          <ChevronLeft className="h-5 w-5 mr-1" />
-          <span>Voltar ao Dashboard</span>
-        </Link>
-      </div>
+    <div className="p-6 w-full h-full min-h-screen bg-white">
+      <header className="flex flex-col sm:flex-row items-center justify-between mb-6 gap-4">
+        <h1 className="text-3xl font-extrabold text-gray-900">Playlists</h1>
 
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Minhas Playlists</h1>
         <button
-          onClick={() => {
-            setShowModal(true);
-            setEditingId(null);
-            setNomePlaylist('');
-            setStatus(null);
-          }}
-          className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-md"
+          className="bg-blue-600 text-white px-5 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors duration-200 shadow"
+          onClick={() => abrirModal()}
         >
-          <PlusCircle className="w-4 h-4 mr-2" />
-          Criar Playlist
+          <PlusCircle size={20} />
+          Nova Playlist
         </button>
-      </div>
+      </header>
 
-      {status && (
-        <div className="bg-yellow-100 text-yellow-800 px-4 py-2 rounded-md">
-          {status}
-        </div>
-      )}
-
-      <div className="bg-white rounded-lg shadow-sm p-6">
-        <table className="min-w-full table-auto">
-          <thead>
-            <tr className="text-left text-sm font-medium text-gray-700 border-b">
-              <th className="px-4 py-2">#</th>
-              <th className="px-4 py-2">Nome</th>
-              <th className="px-4 py-2">Qtd. Vídeos</th>
-              <th className="px-4 py-2">Duração</th>
-              <th className="px-4 py-2 text-right">Ações</th>
+      <div className="overflow-x-auto rounded-lg border border-gray-300 shadow-sm bg-white">
+        <table className="w-full min-w-[600px] border-collapse bg-white">
+          <thead className="bg-blue-50">
+            <tr>
+              <th className="text-left p-4 font-semibold text-blue-800 border-b border-blue-100">Nome</th>
+              <th className="text-center p-4 font-semibold text-blue-800 border-b border-blue-100 w-28">Qtd. Vídeos</th>
+              <th className="text-center p-4 font-semibold text-blue-800 border-b border-blue-100 w-36">Duração Total</th>
+              <th className="text-center p-4 font-semibold text-blue-800 border-b border-blue-100 w-40">Ações</th>
             </tr>
           </thead>
           <tbody>
-            {playlists.map((playlist, index) => (
-              <tr key={playlist.id} className="border-b hover:bg-gray-50">
-                <td className="px-4 py-2">{index + 1}</td>
-                <td className="px-4 py-2">{playlist.nome}</td>
-                <td className="px-4 py-2">{playlist.quantidadeVideos || 0}</td>
-                <td className="px-4 py-2">{formatarDuracao(playlist.duracaoTotal || 0)}</td>
-                <td className="px-4 py-2 text-right space-x-2">
+            {playlists.length === 0 && (
+              <tr>
+                <td colSpan={4} className="text-center text-gray-500 p-6">
+                  Nenhuma playlist criada
+                </td>
+              </tr>
+            )}
+            {playlists.map((playlist) => (
+              <tr
+                key={playlist.id}
+                className="cursor-pointer transition-colors duration-150 hover:bg-blue-100"
+              >
+                <td className="p-4 max-w-xs truncate">{playlist.nome}</td>
+                <td className="p-4 text-center">{playlist.quantidadeVideos ?? 0}</td>
+                <td className="p-4 text-center">
+                  {playlist.duracaoTotal ? formatarDuracao(playlist.duracaoTotal) : '00:00:00'}
+                </td>
+                <td className="p-4 flex justify-center gap-4 text-blue-600">
                   <button
-                    onClick={() => abrirEditar(playlist)}
-                    className="text-blue-600 hover:text-blue-800"
-                    title="Editar"
+                    title="Abrir player"
+                    onClick={() => abrirPlayerPlaylist(playlist.id)}
+                    className="hover:text-blue-800 transition"
                   >
-                    <Edit2 className="inline-block w-4 h-4" />
+                    <Play size={18} />
                   </button>
                   <button
-                    onClick={() => deletarPlaylist(playlist.id)}
-                    className="text-red-600 hover:text-red-800"
-                    title="Excluir"
+                    title="Editar"
+                    onClick={() => abrirModal(playlist)}
+                    className="hover:text-blue-800 transition"
                   >
-                    <Trash2 className="inline-block w-4 h-4" />
+                    <Edit2 size={18} />
+                  </button>
+                  <button
+                    title="Deletar"
+                    onClick={() => deletarPlaylist(playlist.id)}
+                    className="text-red-600 hover:text-red-800 transition"
+                  >
+                    <Trash2 size={18} />
                   </button>
                 </td>
               </tr>
@@ -234,47 +436,176 @@ const Playlists: React.FC = () => {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-lg relative">
-            <button
-              onClick={() => setShowModal(false)}
-              className="absolute top-3 right-3 text-gray-600 hover:text-gray-800"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            <h2 className="text-xl font-semibold mb-4">
-              {editingId ? 'Editar Playlist' : 'Nova Playlist'}
-            </h2>
-            <form onSubmit={salvarPlaylist} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Nome da Playlist</label>
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4 overflow-auto">
+          <div className="bg-white rounded-xl p-8 max-w-[90vw] max-h-[90vh] w-full overflow-auto shadow-2xl border border-gray-300">
+            <form onSubmit={salvarPlaylist} className="h-full flex flex-col">
+              <div className="mb-6">
+                <label htmlFor="nome" className="block mb-2 font-semibold text-gray-800 text-lg">
+                  Nome da playlist
+                </label>
                 <input
+                  id="nome"
                   type="text"
+                  className="w-full border border-gray-300 rounded-md p-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   value={nomePlaylist}
                   onChange={(e) => setNomePlaylist(e.target.value)}
-                  className="mt-1 w-full px-3 py-2 border rounded-md focus:outline-none focus:ring focus:border-blue-500"
                   required
                 />
               </div>
-              <div className="flex justify-end space-x-2">
+
+              <div className="mb-6 flex gap-6 flex-grow overflow-hidden">
+                {/* Lista de pastas e vídeos disponíveis */}
+                <div className="flex-1 max-h-full overflow-y-auto border border-gray-300 rounded-md p-3 bg-gray-50">
+                  <h2 className="font-semibold mb-3 text-gray-900 text-lg">Pastas e vídeos disponíveis</h2>
+                  {folders.map((folder) => (
+                    <div key={folder.id} className="mb-3">
+                      <div
+                        className="flex items-center justify-between cursor-pointer select-none border-b border-gray-200 pb-2 mb-3 hover:bg-gray-100 transition-colors duration-200"
+                        onClick={() => toggleFolder(folder.id)}
+                      >
+                        <div className="flex items-center gap-2">
+                          {expandedFolders[folder.id] ? (
+                            <ChevronDown size={20} className="text-blue-600" />
+                          ) : (
+                            <ChevronRight size={20} className="text-blue-600" />
+                          )}
+                          <span className="font-semibold text-gray-900 text-lg">{folder.nome}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            adicionarTodosDaPasta(folder.id);
+                          }}
+                          className="text-blue-600 hover:text-blue-800 transition-colors duration-200"
+                          title="Adicionar todos da pasta"
+                        >
+                          <PlusCircle size={22} />
+                        </button>
+                      </div>
+
+                      {expandedFolders[folder.id] && (
+                        <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+                          <SortableContext
+                            items={videosByFolder[folder.id]?.map(v => `available-${v.id}`) || []}
+                            strategy={verticalListSortingStrategy}
+                          >
+                            <ul>
+                              {(videosByFolder[folder.id] || []).map((video, index) => (
+                                <AvailableVideo key={video.id} video={video} index={index} />
+                              ))}
+                            </ul>
+                          </SortableContext>
+                        </DndContext>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Lista de vídeos selecionados na playlist */}
+                <div className="flex-1 max-h-full overflow-y-auto border border-gray-300 rounded-md p-3 flex flex-col bg-gray-50">
+                  <h2 className="font-semibold mb-3 flex justify-between items-center text-gray-900 text-lg">
+                    Vídeos na playlist
+                    <button
+                      type="button"
+                      onClick={removerTodos}
+                      className="text-red-600 hover:text-red-800 transition-colors duration-200"
+                      title="Remover todos"
+                    >
+                      <X size={20} />
+                    </button>
+                  </h2>
+
+                  <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+                    <SortableContext
+                      items={selectedVideos.map((_, i) => `selected-${i}`)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <ul className="flex-grow overflow-y-auto">
+                        {selectedVideos.map((video, index) => (
+                          <SelectedVideo key={`${video.id}-${index}`} video={video} index={index} />
+                        ))}
+                      </ul>
+                    </SortableContext>
+                  </DndContext>
+                </div>
+              </div>
+
+              {status && <p className="mb-4 text-red-600 font-semibold">{status}</p>}
+
+              <div className="flex justify-end gap-3 mt-auto">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="px-4 py-2 border rounded hover:bg-gray-100"
+                  className="px-5 py-2 bg-gray-200 rounded-md hover:bg-gray-300 transition-colors duration-200 disabled:opacity-50"
+                  disabled={loading}
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
+                  className="px-5 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-200 disabled:opacity-50"
                   disabled={loading}
-                  className={`px-4 py-2 text-white rounded ${
-                    loading ? 'bg-blue-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
-                  }`}
                 >
-                  {loading ? 'Salvando...' : editingId ? 'Salvar' : 'Criar'}
+                  {loading ? 'Salvando...' : 'Salvar'}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {videoPlayerModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-80 flex justify-center items-center z-50 p-4">
+          <div className="bg-black rounded max-w-[90vw] max-h-[90vh] w-full h-full relative flex flex-col items-center p-4">
+            <video
+              key={videoPlayerSrc}
+              src={videoPlayerSrc}
+              controls
+              autoPlay
+              className="w-full h-full rounded object-contain"
+              onEnded={
+                playlistVideosToPlay.length > 0
+                  ? handleVideoEnded
+                  : () => setVideoPlayerModalOpen(false)
+              }
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setVideoPlayerModalOpen(false);
+                setPlaylistVideosToPlay([]);
+                setPlaylistPlayerIndex(0);
+              }}
+              className="absolute top-2 right-2 text-white bg-black bg-opacity-50 rounded p-1 hover:bg-opacity-80 transition-colors duration-200"
+              aria-label="Fechar player"
+            >
+              <X size={24} />
+            </button>
+
+            {playlistVideosToPlay.length > 0 && (
+              <div className="flex justify-between w-full mt-2 text-white px-2">
+                <button
+                  disabled={playlistPlayerIndex === 0}
+                  onClick={() => setPlaylistPlayerIndex(i => Math.max(i - 1, 0))}
+                  className="px-3 py-1 bg-zinc-700 rounded disabled:opacity-50 transition-colors duration-200"
+                >
+                  Anterior
+                </button>
+
+                <span>
+                  {playlistPlayerIndex + 1} / {playlistVideosToPlay.length}
+                </span>
+
+                <button
+                  disabled={playlistPlayerIndex === playlistVideosToPlay.length - 1}
+                  onClick={() => setPlaylistPlayerIndex(i => Math.min(i + 1, playlistVideosToPlay.length - 1))}
+                  className="px-3 py-1 bg-zinc-700 rounded disabled:opacity-50 transition-colors duration-200"
+                >
+                  Próximo
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

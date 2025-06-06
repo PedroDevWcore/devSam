@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "react-toastify";
+import { Play, Trash2 } from "lucide-react";
 
-type Playlist = {
+type Folder = {
   id: number;
   nome: string;
 };
@@ -10,9 +11,10 @@ type Playlist = {
 type Video = {
   id: number;
   nome: string;
-  playlist_id: number;
+  folder_id: number;
   duracao?: number;
   tamanho?: number;
+  url?: string;
 };
 
 function formatarDuracao(segundos: number): string {
@@ -30,81 +32,153 @@ function formatarTamanho(bytes: number): string {
   const units = ['B', 'KB', 'MB', 'GB'];
   let size = bytes;
   let unitIndex = 0;
-  
   while (size >= 1024 && unitIndex < units.length - 1) {
     size /= 1024;
     unitIndex++;
   }
-  
   return `${size.toFixed(2)} ${units[unitIndex]}`;
+}
+
+function ModalVideo({
+  aberto,
+  onFechar,
+  videoAtual,
+  playlist,
+}: {
+  aberto: boolean;
+  onFechar: () => void;
+  videoAtual?: Video | null;
+  playlist?: Video[];
+}) {
+  const [indexAtual, setIndexAtual] = useState(0);
+
+  useEffect(() => {
+    if (playlist && playlist.length > 0) setIndexAtual(0);
+  }, [playlist]);
+
+  useEffect(() => {
+    setIndexAtual(0);
+  }, [videoAtual]);
+
+  if (!aberto) return null;
+
+  const videos = playlist && playlist.length > 0 ? playlist : videoAtual ? [videoAtual] : [];
+
+  const video = videos[indexAtual];
+
+  const proximoVideo = () => {
+    if (indexAtual < videos.length - 1) {
+      setIndexAtual(indexAtual + 1);
+    } else {
+      onFechar();
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50"
+      onClick={onFechar}
+    >
+      <div
+        className="bg-white rounded shadow-lg max-w-3xl w-full max-h-[90vh] p-4 flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex justify-between items-center mb-2">
+          <h3 className="font-semibold text-lg truncate">{video?.nome || "Nenhum vídeo"}</h3>
+          <button onClick={onFechar} className="text-gray-600 hover:text-gray-900 font-bold text-xl leading-none">&times;</button>
+        </div>
+        {video ? (
+          <video
+            className="w-full max-h-[70vh]"
+            src={video.url}
+            controls
+            autoPlay
+            onEnded={proximoVideo}
+          />
+        ) : (
+          <p>Nenhum vídeo para reproduzir</p>
+        )}
+        {videos.length > 1 && (
+          <div className="mt-2 flex justify-between items-center text-sm text-gray-700">
+            <button
+              onClick={() => setIndexAtual(i => Math.max(i - 1, 0))}
+              disabled={indexAtual === 0}
+              className={`px-2 py-1 rounded ${indexAtual === 0 ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-200"}`}
+            >
+              Anterior
+            </button>
+            <span>{indexAtual + 1} / {videos.length}</span>
+            <button
+              onClick={() => setIndexAtual(i => Math.min(i + 1, videos.length - 1))}
+              disabled={indexAtual === videos.length - 1}
+              className={`px-2 py-1 rounded ${indexAtual === videos.length - 1 ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-200"}`}
+            >
+              Próximo
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function GerenciarVideos() {
   const { getToken } = useAuth();
-  const [playlists, setPlaylists] = useState<Playlist[]>([]);
-  const [playlistSelecionada, setPlaylistSelecionada] = useState<Playlist | null>(null);
-  const [novoPlaylistNome, setNovoPlaylistNome] = useState("");
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [folderSelecionada, setFolderSelecionada] = useState<Folder | null>(null);
+  const [novoFolderNome, setNovoFolderNome] = useState("");
   const [videos, setVideos] = useState<Video[]>([]);
   const [uploadFiles, setUploadFiles] = useState<FileList | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [modalAberta, setModalAberta] = useState(false);
+  const [videoModalAtual, setVideoModalAtual] = useState<Video | null>(null);
+  const [playlistModal, setPlaylistModal] = useState<Video[] | null>(null);
 
   useEffect(() => {
-    fetchPlaylists();
+    fetchFolders();
   }, []);
 
   useEffect(() => {
-    if (playlistSelecionada) {
-      fetchVideos(playlistSelecionada.id);
+    if (folderSelecionada) {
+      fetchVideos(folderSelecionada.id);
     } else {
       setVideos([]);
     }
-  }, [playlistSelecionada]);
+  }, [folderSelecionada]);
 
-  const fetchPlaylists = async () => {
+  const fetchFolders = async () => {
     try {
       const token = await getToken();
-      const response = await fetch("/api/playlists", {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+      const response = await fetch("/api/folders", {
+        headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
-      setPlaylists(data);
-      if (data.length > 0) setPlaylistSelecionada(data[0]);
-    } catch (error) {
-      console.error("Erro ao buscar playlists:", error);
-      toast.error("Erro ao carregar playlists");
+      setFolders(data);
+      if (data.length > 0) setFolderSelecionada(data[0]);
+    } catch {
+      toast.error("Erro ao carregar pastas");
     }
   };
 
-  const fetchVideos = async (playlist_id: number) => {
-  try {
-    const token = await getToken();
-    const response = await fetch(`/api/videos?playlist_id=${playlist_id}`, {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    });
-    
-    if (!response.ok) {
-      // Pode lançar erro para o catch
-      throw new Error(`HTTP error! status: ${response.status}`);
+  const fetchVideos = async (folder_id: number) => {
+    try {
+      const token = await getToken();
+      const response = await fetch(`/api/videos?folder_id=${folder_id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error();
+      const data = await response.json();
+      setVideos(Array.isArray(data) ? data : []);
+    } catch {
+      toast.error("Erro ao carregar vídeos");
+      setVideos([]);
     }
-    
-    const data = await response.json();
-    setVideos(Array.isArray(data) ? data : []);
-  } catch (error) {
-    console.error("Erro ao buscar vídeos:", error);
-    toast.error("Erro ao carregar vídeos");
-    setVideos([]); // garantir que videos seja array
-  }
-};
+  };
 
-
-  const handleFilesChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-    
     const videosOnly = Array.from(files).filter(f => f.type.startsWith("video/"));
     if (videosOnly.length !== files.length) {
       toast.error("Apenas arquivos de vídeo são permitidos");
@@ -112,9 +186,7 @@ export default function GerenciarVideos() {
       setUploadFiles(null);
       return;
     }
-
-    // Validar tamanho máximo (exemplo: 2GB por arquivo)
-    const MAX_SIZE = 2 * 1024 * 1024 * 1024; // 2GB em bytes
+    const MAX_SIZE = 2 * 1024 * 1024 * 1024;
     const oversizedFiles = videosOnly.filter(f => f.size > MAX_SIZE);
     if (oversizedFiles.length > 0) {
       toast.error(`Arquivos muito grandes: ${oversizedFiles.map(f => f.name).join(", ")}`);
@@ -122,7 +194,6 @@ export default function GerenciarVideos() {
       setUploadFiles(null);
       return;
     }
-
     setUploadFiles(files);
   };
 
@@ -144,243 +215,299 @@ export default function GerenciarVideos() {
   };
 
   const uploadVideos = async () => {
-    if (!playlistSelecionada || !uploadFiles || uploadFiles.length === 0) {
-      toast.error("Selecione uma playlist e ao menos um arquivo para upload");
+    if (!folderSelecionada || !uploadFiles || uploadFiles.length === 0) {
+      toast.error("Selecione uma pasta e ao menos um arquivo para upload");
       return;
     }
     setUploading(true);
-
+    setUploadProgress(0);
     try {
       const token = await getToken();
-      
       for (const file of Array.from(uploadFiles)) {
         const formData = new FormData();
         formData.append("video", file);
-        formData.append("playlist_id", playlistSelecionada.id.toString());
-        
+        formData.append("folder_id", folderSelecionada.id.toString());
         const duracao = await getVideoDuration(file);
         formData.append("duracao", duracao.toString());
         formData.append("tamanho", file.size.toString());
-
-        try {
-          const response = await fetch("/api/videos/upload", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`
-            },
-            body: formData
-          });
-
-          if (!response.ok) throw new Error(`Erro ao enviar ${file.name}`);
-
-          const videoData = await response.json();
-          setVideos(prev => [...prev, {
-            ...videoData,
-            nome: file.name,
-            duracao,
-            tamanho: file.size
-          }]);
-
-          toast.success(`${file.name} enviado com sucesso!`);
-        } catch (error) {
-          console.error(`Erro ao enviar ${file.name}:`, error);
-          toast.error(`Erro ao enviar ${file.name}`);
-        }
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("POST", "/api/videos/upload");
+          xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              const progressoAtual = (e.loaded / e.total) * 100;
+              setUploadProgress(progressoAtual);
+            }
+          };
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              const videoData = JSON.parse(xhr.responseText);
+              setVideos(prev => [...prev, {
+                ...videoData,
+                nome: file.name,
+                duracao,
+                tamanho: file.size,
+                url: videoData.url || "" // Ajustar conforme resposta do backend
+              }]);
+              toast.success(`${file.name} enviado com sucesso!`);
+              resolve();
+            } else {
+              toast.error(`Erro ao enviar ${file.name}`);
+              reject();
+            }
+          };
+          xhr.onerror = () => {
+            toast.error(`Erro ao enviar ${file.name}`);
+            reject();
+          };
+          xhr.send(formData);
+        });
       }
-    } catch (error) {
-      console.error("Erro no upload:", error);
+    } catch {
       toast.error("Erro no upload de vídeos");
     } finally {
       setUploading(false);
       setUploadFiles(null);
+      setUploadProgress(0);
       const inputFile = document.getElementById("input-upload-videos") as HTMLInputElement;
       if (inputFile) inputFile.value = "";
     }
   };
 
-  const criarPlaylist = async () => {
-    if (!novoPlaylistNome.trim()) return;
-    
+  const criarFolder = async () => {
+    if (!novoFolderNome.trim()) return;
     try {
       const token = await getToken();
-      const response = await fetch("/api/playlists", {
+      const response = await fetch("/api/folders", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ nome: novoPlaylistNome.trim() })
+        body: JSON.stringify({ nome: novoFolderNome.trim() })
       });
-
-      if (!response.ok) throw new Error("Erro ao criar playlist");
-
-      const novaPlaylist = await response.json();
-      setPlaylists(prev => [...prev, novaPlaylist]);
-      setNovoPlaylistNome("");
-      toast.success("Playlist criada com sucesso!");
-    } catch (error) {
-      console.error("Erro ao criar playlist:", error);
-      toast.error("Erro ao criar playlist");
+      if (!response.ok) throw new Error();
+      const novaFolder = await response.json();
+      setFolders(prev => [...prev, novaFolder]);
+      setNovoFolderNome("");
+      toast.success("Pasta criada com sucesso!");
+    } catch {
+      toast.error("Erro ao criar pasta");
     }
   };
 
-  const deletarPlaylist = async (id: number) => {
-    if (!confirm("Confirma a exclusão da playlist?")) return;
-    
+  const deletarFolder = async (id: number) => {
+    if (!confirm("Confirma a exclusão da pasta?")) return;
     try {
       const token = await getToken();
-      const response = await fetch(`/api/playlists/${id}`, {
+      const response = await fetch(`/api/folders/${id}`, {
         method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+        headers: { Authorization: `Bearer ${token}` }
       });
-
-      if (!response.ok) throw new Error("Erro ao deletar playlist");
-
-      setPlaylists(prev => prev.filter(pl => pl.id !== id));
-      if (playlistSelecionada?.id === id) {
-        setPlaylistSelecionada(null);
+      if (!response.ok) throw new Error();
+      setFolders(prev => prev.filter(f => f.id !== id));
+      if (folderSelecionada?.id === id) {
+        setFolderSelecionada(null);
         setVideos([]);
       }
-      toast.success("Playlist excluída com sucesso!");
-    } catch (error) {
-      console.error("Erro ao deletar playlist:", error);
-      toast.error("Erro ao excluir playlist");
+      toast.success("Pasta excluída com sucesso!");
+    } catch {
+      toast.error("Erro ao excluir pasta");
     }
   };
 
   const deletarVideo = async (id: number) => {
     if (!confirm("Confirma a exclusão do vídeo?")) return;
-    
     try {
       const token = await getToken();
       const response = await fetch(`/api/videos/${id}`, {
         method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+        headers: { Authorization: `Bearer ${token}` }
       });
-
-      if (!response.ok) throw new Error("Erro ao deletar vídeo");
-
+      if (!response.ok) throw new Error();
       setVideos(prev => prev.filter(v => v.id !== id));
       toast.success("Vídeo excluído com sucesso!");
-    } catch (error) {
-      console.error("Erro ao deletar vídeo:", error);
+    } catch {
       toast.error("Erro ao excluir vídeo");
     }
   };
 
+  const abrirModalVideo = (video: Video) => {
+    setVideoModalAtual(video);
+    setPlaylistModal(null);
+    setModalAberta(true);
+  };
+
+  const abrirModalPlaylist = () => {
+    if (!folderSelecionada) return;
+    setPlaylistModal(videos);
+    setVideoModalAtual(null);
+    setModalAberta(true);
+  };
+
   return (
-    <div className="max-w-5xl mx-auto p-4 flex flex-col md:flex-row gap-6 min-h-[600px]">
-      <section className="md:w-1/3 bg-white p-5 rounded-lg shadow-md flex flex-col">
-        <h2 className="text-2xl font-semibold mb-5 text-gray-800">Playlists</h2>
-        <ul className="flex-grow overflow-auto max-h-[400px] space-y-2">
-          {playlists.map((playlist) => (
-            <li
-              key={playlist.id}
-              className={`flex justify-between items-center p-3 rounded cursor-pointer select-none
-                ${
-                  playlistSelecionada?.id === playlist.id
-                    ? "bg-blue-200 font-semibold"
-                    : "hover:bg-blue-50"
-                }`}
-              onClick={() => setPlaylistSelecionada(playlist)}
-              title={`Selecionar playlist ${playlist.nome}`}
-            >
-              <span>{playlist.nome}</span>
-              <button
-                className="text-red-600 hover:text-red-800"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  deletarPlaylist(playlist.id);
-                }}
-                aria-label="Excluir playlist"
+    <>
+      <div className="max-w-7xl mx-auto p-6 flex flex-col md:flex-row gap-8 min-h-[700px]">
+        {/* Seção das Pastas */}
+        <section className="md:w-1/3 bg-gray-50 p-6 rounded-lg shadow-md flex flex-col min-h-[500px] border border-gray-300">
+          <h2 className="text-2xl font-semibold mb-5 text-gray-900 flex justify-between items-center">
+            Pastas
+          </h2>
+          <ul className="flex-grow overflow-auto max-h-[450px] space-y-2">
+            {folders.map((folder) => (
+              <li
+                key={folder.id}
+                className={`cursor-pointer p-2 rounded flex justify-between items-center ${folderSelecionada?.id === folder.id
+                    ? "bg-blue-100 font-semibold text-blue-800"
+                    : "hover:bg-blue-50 text-gray-800"
+                  }`}
+                onClick={() => setFolderSelecionada(folder)}
+                title={`Selecionar pasta ${folder.nome}`}
               >
-                🗑️
-              </button>
-            </li>
-          ))}
-        </ul>
-        <div className="mt-4 flex gap-2">
-          <input
-            type="text"
-            className="flex-grow border border-gray-300 rounded px-3 py-2 focus:outline-blue-500"
-            placeholder="Nova playlist..."
-            value={novoPlaylistNome}
-            onChange={(e) => setNovoPlaylistNome(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && criarPlaylist()}
-          />
-          <button
-            className="bg-blue-600 text-white px-4 rounded hover:bg-blue-700 transition"
-            onClick={criarPlaylist}
-          >
-            +
-          </button>
-        </div>
-      </section>
+                <span>{folder.nome}</span>
+                <div className="flex items-center gap-2">
+                  {/* Ícone para assistir a pasta (playlist da pasta) */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      abrirModalPlaylist();
+                    }}
+                    title={`Assistir todos os vídeos da pasta ${folder.nome}`}
+                    className="text-blue-600 hover:text-blue-800 transition-colors duration-200"
+                    disabled={videos.length === 0}
+                  >
+                    <Play size={20} />
+                  </button>
 
-      <section className="md:w-2/3 bg-white p-5 rounded-lg shadow-md flex flex-col">
-        <h2 className="text-2xl font-semibold mb-5 text-gray-800">
-          Vídeos da playlist:{" "}
-          <span className="font-normal text-gray-600">
-            {playlistSelecionada?.nome ?? "-"}
-          </span>
-        </h2>
+                  {/* Botão para deletar pasta */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deletarFolder(folder.id);
+                    }}
+                    className="text-red-600 hover:text-red-800 transition-colors duration-200"
+                    title="Excluir pasta"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+          {/* Input para criar pasta */}
+          <div className="mt-4 flex gap-2 max-w-full">
+            <input
+              type="text"
+              value={novoFolderNome}
+              onChange={(e) => setNovoFolderNome(e.target.value)}
+              className="flex-grow min-w-0 border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              placeholder="Nova pasta"
+            />
+            <button
+              onClick={criarFolder}
+              className="bg-blue-600 text-white px-5 rounded hover:bg-blue-700 whitespace-nowrap transition-colors duration-200"
+            >
+              Criar
+            </button>
+          </div>
+        </section>
 
-        <div className="mb-4 flex items-center gap-4">
+        {/* Seção dos Vídeos */}
+        <section className="md:w-2/3 bg-gray-50 p-6 rounded-lg shadow-md flex flex-col min-h-[500px] border border-gray-300">
+          <h2 className="text-2xl font-semibold mb-5 text-gray-900">
+            Vídeos {folderSelecionada ? ` - ${folderSelecionada.nome}` : ""}
+          </h2>
           <input
-            id="input-upload-videos"
             type="file"
-            accept="video/*"
+            id="input-upload-videos"
             multiple
+            accept="video/*"
             onChange={handleFilesChange}
-            disabled={!playlistSelecionada || uploading}
-            className="border border-gray-300 rounded px-3 py-2 cursor-pointer"
+            disabled={!folderSelecionada || uploading}
+            className="mb-3"
           />
+          {uploading && (
+            <div className="w-full bg-gray-200 rounded h-4 mb-4 overflow-hidden">
+              <div
+                className="bg-blue-600 h-4 transition-all"
+                style={{ width: `${uploadProgress}%` }}
+              />
+            </div>
+          )}
           <button
             onClick={uploadVideos}
-            disabled={!uploadFiles || uploadFiles.length === 0 || uploading}
-            className={`px-5 py-2 rounded text-white ${
-              !uploadFiles || uploadFiles.length === 0 || uploading
-                ? "bg-gray-400 cursor-not-allowed"
-                : "bg-green-600 hover:bg-green-700"
-            } transition`}
+            disabled={!uploadFiles || uploadFiles.length === 0 || uploading || !folderSelecionada}
+            className="bg-blue-600 text-white px-5 py-3 rounded hover:bg-blue-700 disabled:opacity-50 transition-colors duration-200"
           >
-            {uploading ? "Enviando..." : "Enviar vídeos"}
+            {uploading ? "Enviando..." : "Enviar"}
           </button>
-        </div>
 
-        <ul className="flex-grow overflow-auto max-h-[400px] space-y-3 border border-gray-200 rounded p-3">
-          {videos.map((video) => (
-            <li
-              key={video.id}
-              className="flex justify-between items-center p-3 rounded bg-gray-50 hover:bg-gray-100"
-            >
-              <div className="flex flex-col">
-                <span className="font-medium">{video.nome}</span>
-                <span className="text-sm text-gray-600">
-                  {video.duracao !== undefined && `${formatarDuracao(video.duracao)} • `}
-                  {video.tamanho !== undefined && formatarTamanho(video.tamanho)}
-                </span>
-              </div>
-              <button
-                className="text-red-600 hover:text-red-800"
-                onClick={() => deletarVideo(video.id)}
-                aria-label="Excluir vídeo"
-              >
-                🗑️
-              </button>
-            </li>
-          ))}
-          {videos.length === 0 && (
-            <li className="text-center text-gray-500 py-4">
-              Nenhum vídeo nesta playlist.
-            </li>
-          )}
-        </ul>
-      </section>
-    </div>
+          <div className="mt-8 flex-grow overflow-auto max-h-[450px]">
+            <table className="w-full border-collapse text-left text-sm">
+              <thead>
+                <tr className="border-b border-gray-300">
+                  <th className="py-2 px-4">Nome</th>
+                  <th className="py-2 px-4 w-28">Duração</th>
+                  <th className="py-2 px-4 w-28">Tamanho</th>
+                  <th className="py-2 px-4 w-24">Assistir</th>
+                  <th className="py-2 px-4 w-24">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {videos.map((video) => (
+                  <tr
+                    key={video.id}
+                    className="border-b border-gray-200 hover:bg-blue-50 cursor-pointer"
+                    title="Clique para assistir"
+                  >
+                    <td className="py-2 px-4 truncate max-w-xs">{video.nome}</td>
+                    <td className="py-2 px-4">{video.duracao ? formatarDuracao(video.duracao) : "--"}</td>
+                    <td className="py-2 px-4">{video.tamanho ? formatarTamanho(video.tamanho) : "--"}</td>
+                    <td className="py-2 px-4 text-blue-600 text-center">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          abrirModalVideo(video);
+                        }}
+                        title="Assistir vídeo"
+                        className="hover:text-blue-800 transition-colors duration-200"
+                      >
+                        <Play size={20} />
+                      </button>
+                    </td>
+                    <td className="py-2 px-4 text-red-600 text-center">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deletarVideo(video.id);
+                        }}
+                        title="Excluir vídeo"
+                        className="hover:text-red-800 transition-colors duration-200"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {videos.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="py-6 text-center text-gray-500">
+                      Nenhum vídeo nesta pasta
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+      <ModalVideo
+        aberto={modalAberta}
+        onFechar={() => setModalAberta(false)}
+        videoAtual={videoModalAtual}
+        playlist={playlistModal ?? undefined}
+      />
+    </>
   );
 }

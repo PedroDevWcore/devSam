@@ -1,3 +1,8 @@
+import express from 'express';
+import { supabase, supabaseAuthMiddleware } from '../supabaseClient.js';
+
+const router = express.Router();
+
 router.get('/', supabaseAuthMiddleware, async (req, res) => {
     const { ano, mes, data, mesAno } = req.query;
     const userId = req.user?.id;
@@ -9,8 +14,8 @@ router.get('/', supabaseAuthMiddleware, async (req, res) => {
             .from('playlists_agendamentos')
             .select(`
                 *,
-                playlist_principal:playlists!playlists_agendamentos_id_playlist_fkey (id, nome),
-                playlist_finalizacao:playlists!playlists_agendamentos_id_playlist_finalizacao_fkey (id, nome)
+                playlist_principal:playlists!playlists_agendamentos_id_playlist_fkey (nome),
+                playlist_finalizacao:playlists!playlists_agendamentos_id_playlist_finalizacao_fkey (nome)
             `)
             .eq('id_user', userId);
 
@@ -45,17 +50,82 @@ router.get('/', supabaseAuthMiddleware, async (req, res) => {
             return res.status(500).json({ error: error.message });
         }
 
-        // Desembrulha os nomes das playlists para simplificar o frontend
-        const agendamentosComNomes = agendamentos.map(ag => ({
-            ...ag,
-            nome_playlist_principal: ag.playlist_principal?.nome ?? '-',
-            nome_playlist_finalizacao: ag.playlist_finalizacao?.nome ?? '-',
-        }));
-
-        res.json(agendamentosComNomes);
+        res.json(agendamentos);
     } catch (err) {
         res.status(500).json({ error: err.message || 'Erro interno no servidor' });
     }
-
 });
+
+router.post('/', supabaseAuthMiddleware, async (req, res) => {
+    const userId = req.user?.id;
+
+    if (!userId) return res.status(401).json({ error: 'Usuário não autenticado' });
+
+    try {
+        const novoAgendamento = {
+            ...req.body,
+            id_user: userId,
+        };
+
+        console.log('Dados recebidos para novo agendamento:', novoAgendamento);
+
+        const { data, error } = await supabase
+            .from('playlists_agendamentos')
+            .insert(novoAgendamento)
+            .select();
+
+        if (error) {
+            console.error('Erro ao inserir agendamento:', error);
+            return res.status(500).json({ error: error.message });
+        }
+
+        res.status(201).json(data[0]);
+    } catch (err) {
+        console.error('Erro inesperado no servidor:', err);
+        res.status(500).json({ error: err.message || 'Erro ao criar agendamento' });
+    }
+});
+
+router.put('/:id', supabaseAuthMiddleware, async (req, res) => {
+    const { id } = req.params;
+    const userId = req.user?.id;
+
+    if (!userId) return res.status(401).json({ error: 'Usuário não autenticado' });
+
+    try {
+        const { error } = await supabase
+            .from('playlists_agendamentos')
+            .update(req.body)
+            .eq('id', id)
+            .eq('id_user', userId);
+
+        if (error) return res.status(500).json({ error: error.message });
+
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message || 'Erro ao atualizar agendamento' });
+    }
+});
+
+router.delete('/:id', supabaseAuthMiddleware, async (req, res) => {
+    const { id } = req.params;
+    const userId = req.user?.id;
+
+    if (!userId) return res.status(401).json({ error: 'Usuário não autenticado' });
+
+    try {
+        const { error } = await supabase
+            .from('playlists_agendamentos')
+            .delete()
+            .eq('id', id)
+            .eq('id_user', userId);
+
+        if (error) return res.status(500).json({ error: error.message });
+
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message || 'Erro ao excluir agendamento' });
+    }
+});
+
 export default router;

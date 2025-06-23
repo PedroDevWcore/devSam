@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
-import { Menu, FileVideo, LogOut, User, Settings, Bell } from 'lucide-react';
+import { Menu, FileVideo, LogOut, User, Settings, Bell, Play, Calendar } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import Logo from '/logo.png';
@@ -75,6 +75,36 @@ const DashboardLayout: React.FC = () => {
                     </svg>
                   </span>
                   <span>Dashboard</span>
+                </NavLink>
+              </li>
+              <li>
+                <NavLink
+                  to="/dashboard/iniciar-transmissao"
+                  className={({ isActive }) =>
+                    `flex items-center px-4 py-3 text-gray-700 rounded-lg ${
+                      isActive ? 'bg-primary-50 text-primary-700' : 'hover:bg-gray-100'
+                    }`
+                  }
+                >
+                  <span className="mr-3">
+                    <Play className="h-5 w-5" />
+                  </span>
+                  <span>Iniciar Transmissão</span>
+                </NavLink>
+              </li>
+              <li>
+                <NavLink
+                  to="/dashboard/agendamentos-transmissao"
+                  className={({ isActive }) =>
+                    `flex items-center px-4 py-3 text-gray-700 rounded-lg ${
+                      isActive ? 'bg-primary-50 text-primary-700' : 'hover:bg-gray-100'
+                    }`
+                  }
+                >
+                  <span className="mr-3">
+                    <Calendar className="h-5 w-5" />
+                  </span>
+                  <span>Agendamentos</span>
                 </NavLink>
               </li>
               <li>

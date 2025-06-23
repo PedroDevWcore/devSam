@@ -81,6 +81,20 @@ const Dashboard: React.FC = () => {
           <hr className="mb-4" />
 
           <div className="grid grid-cols-3 gap-4">
+            <Link to="/dashboard/iniciar-transmissao" className="flex flex-col items-center justify-center p-3 hover:bg-gray-50 rounded-lg transition-colors">
+              <div className="w-12 h-12 flex items-center justify-center bg-primary-100 text-primary-600 rounded-full mb-2">
+                <Play className="h-6 w-6" />
+              </div>
+              <span className="text-sm text-gray-700 text-center">Iniciar Transmissão</span>
+            </Link>
+
+            <Link to="/dashboard/agendamentos-transmissao" className="flex flex-col items-center justify-center p-3 hover:bg-gray-50 rounded-lg transition-colors">
+              <div className="w-12 h-12 flex items-center justify-center bg-primary-100 text-primary-600 rounded-full mb-2">
+                <Calendar className="h-6 w-6" />
+              </div>
+              <span className="text-sm text-gray-700 text-center">Agendamentos</span>
+            </Link>
+
             <Link to="/dashboard/dados-conexao" className="flex flex-col items-center justify-center p-3 hover:bg-gray-50 rounded-lg transition-colors">
               <div className="w-12 h-12 flex items-center justify-center bg-primary-100 text-primary-600 rounded-full mb-2">
                 <Settings className="h-6 w-6" />
@@ -129,20 +143,6 @@ const Dashboard: React.FC = () => {
               </div>
               <span className="text-sm text-gray-700 text-center">App Android</span>
             </div>
-
-            <div className="flex flex-col items-center justify-center p-3 hover:bg-gray-50 rounded-lg transition-colors">
-              <div className="w-12 h-12 flex items-center justify-center bg-primary-100 text-primary-600 rounded-full mb-2">
-                <Smartphone className="h-6 w-6" />
-              </div>
-              <span className="text-sm text-gray-700 text-center">Fazer ao vivo usando smartphone</span>
-            </div>
-
-            <div className="flex flex-col items-center justify-center p-3 hover:bg-gray-50 rounded-lg transition-colors">
-              <div className="w-12 h-12 flex items-center justify-center bg-primary-100 text-primary-600 rounded-full mb-2">
-                <RefreshCw className="h-6 w-6" />
-              </div>
-              <span className="text-sm text-gray-700 text-center">Pular vídeo</span>
-            </div>
           </div>
         </div>
 
@@ -173,25 +173,12 @@ const Dashboard: React.FC = () => {
               <span className="text-sm text-gray-700 text-center">Gerenciar Vídeos</span>
             </Link>
 
-
-            {/* Aqui está o link adicionado */}
             <Link to="/dashboard/playlists" className="flex flex-col items-center justify-center p-3 hover:bg-gray-50 rounded-lg transition-colors">
               <div className="w-12 h-12 flex items-center justify-center bg-primary-100 text-primary-600 rounded-full mb-2">
                 <FolderPlus className="h-6 w-6" />
               </div>
               <span className="text-sm text-gray-700 text-center">Gerenciar Playlists</span>
             </Link>
-
-            <Link
-              to="/dashboard/agendamentos"
-              className="flex flex-col items-center justify-center p-3 hover:bg-gray-50 rounded-lg transition-colors"
-            >
-              <div className="w-12 h-12 flex items-center justify-center bg-primary-100 text-primary-600 rounded-full mb-2">
-                <Calendar className="h-6 w-6" />
-              </div>
-              <span className="text-sm text-gray-700 text-center">Agendar Playlists</span>
-            </Link>
-
 
             <div className="flex flex-col items-center justify-center p-3 hover:bg-gray-50 rounded-lg transition-colors">
               <div className="w-12 h-12 flex items-center justify-center bg-primary-100 text-primary-600 rounded-full mb-2">
@@ -205,6 +192,13 @@ const Dashboard: React.FC = () => {
                 <ArrowLeftRight className="h-6 w-6" />
               </div>
               <span className="text-sm text-gray-700 text-center">Relay RTMP/M3U8</span>
+            </div>
+
+            <div className="flex flex-col items-center justify-center p-3 hover:bg-gray-50 rounded-lg transition-colors">
+              <div className="w-12 h-12 flex items-center justify-center bg-primary-100 text-primary-600 rounded-full mb-2">
+                <RefreshCw className="h-6 w-6" />
+              </div>
+              <span className="text-sm text-gray-700 text-center">Pular vídeo</span>
             </div>
           </div>
         </div>
